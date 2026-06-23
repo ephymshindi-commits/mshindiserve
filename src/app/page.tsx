@@ -26,7 +26,7 @@ async function getFeaturedData(): Promise<{
     ]);
 
     // 🔒 STRICT SERIALIZATION (NO PRISMA LEAK)
-    const safeMenuItems = menuItems.map((item) => ({
+    const safeMenuItems: MenuItem[] = menuItems.map((item) => ({
       id: item.id,
       name: item.name,
       description: item.description,
@@ -39,9 +39,9 @@ async function getFeaturedData(): Promise<{
       sortOrder: item.sortOrder,
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
-    })) satisfies MenuItem[];
+    }));
 
-    const safeEvents = events.map((event) => ({
+    const safeEvents: Event[] = events.map((event) => ({
       id: event.id,
       title: event.title,
       description: event.description,
@@ -50,7 +50,7 @@ async function getFeaturedData(): Promise<{
       isActive: event.isActive,
       createdAt: event.createdAt.toISOString(),
       updatedAt: event.updatedAt.toISOString(),
-    })) satisfies Event[];
+    }));
 
     return {
       menuItems: safeMenuItems,

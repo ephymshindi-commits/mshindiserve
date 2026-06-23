@@ -6,9 +6,9 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  phone?: string;
+  phone: string | null;
   role: Role;
-  avatarUrl?: string;
+  avatarUrl: string | null;
   createdAt: string;
 }
 
@@ -19,7 +19,7 @@ export interface AuthTokens {
 }
 
 export interface JWTPayload {
-  sub: string; // userId
+  sub: string;
   email: string;
   role: Role;
   iat: number;
@@ -40,12 +40,15 @@ export interface MenuItem {
   id: string;
   name: string;
   description: string;
-  price: number; // in cents
+  price: number;
   category: MenuCategory;
-  imageUrl?: string;
+  imageUrl: string | null;   // Prisma returns null, not undefined
   emoji: string;
   isAvailable: boolean;
   isFeatured: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── Cart ─────────────────────────────────────────────────────────────────────
@@ -73,7 +76,7 @@ export interface OrderItem {
   menuItem: MenuItem;
   quantity: number;
   unitPrice: number;
-  notes?: string;
+  notes: string | null;
 }
 
 export interface Order {
@@ -82,12 +85,12 @@ export interface Order {
   user: User;
   status: OrderStatus;
   totalAmount: number;
-  notes?: string;
-  tableNumber?: string;
+  notes: string | null;
+  tableNumber: string | null;
   isDelivery: boolean;
-  deliveryAddr?: string;
+  deliveryAddr: string | null;
   paymentStatus: PaymentStatus;
-  mpesaRef?: string;
+  mpesaRef: string | null;
   orderItems: OrderItem[];
   createdAt: string;
   updatedAt: string;
@@ -102,9 +105,12 @@ export interface Room {
   pricePerNight: number;
   capacity: number;
   amenities: string[];
-  imageUrl?: string;
+  imageUrl: string | null;
   emoji: string;
   isAvailable: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type BookingStatus =
@@ -124,9 +130,9 @@ export interface Booking {
   guests: number;
   totalAmount: number;
   status: BookingStatus;
-  specialReqs?: string;
+  specialReqs: string | null;
   paymentStatus: PaymentStatus;
-  mpesaRef?: string;
+  mpesaRef: string | null;
   createdAt: string;
 }
 
@@ -141,8 +147,10 @@ export interface Event {
   ticketPrice: number;
   totalSeats: number;
   soldSeats: number;
-  imageUrl?: string;
+  imageUrl: string | null;
   isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type TicketStatus = "ACTIVE" | "USED" | "CANCELLED";
@@ -163,10 +171,9 @@ export interface Ticket {
 
 export interface MpesaStkRequest {
   phoneNumber: string;
-  amount: number; // in KES (full)
-  reference: string; // e.g. order number
+  amount: number;
+  reference: string;
   description: string;
-  // One of these must be provided:
   orderId?: string;
   bookingId?: string;
   ticketId?: string;

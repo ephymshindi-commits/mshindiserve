@@ -25,23 +25,32 @@ async function getFeaturedData(): Promise<{
       }),
     ]);
 
-    // ✅ FIX: convert Date → string AND force correct typing
-    const safeMenuItems: MenuItem[] = menuItems.map((item) => {
-      return {
-        ...item,
-        createdAt: item.createdAt.toISOString(),
-        updatedAt: item.updatedAt.toISOString(),
-      };
-    });
+    // 🔒 STRICT SERIALIZATION (NO PRISMA LEAK)
+    const safeMenuItems = menuItems.map((item) => ({
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      price: item.price,
+      category: item.category,
+      imageUrl: item.imageUrl,
+      emoji: item.emoji,
+      isAvailable: item.isAvailable,
+      isFeatured: item.isFeatured,
+      sortOrder: item.sortOrder,
+      createdAt: item.createdAt.toISOString(),
+      updatedAt: item.updatedAt.toISOString(),
+    })) satisfies MenuItem[];
 
-    const safeEvents: Event[] = events.map((event) => {
-      return {
-        ...event,
-        date: event.date.toISOString(),
-        createdAt: event.createdAt.toISOString(),
-        updatedAt: event.updatedAt.toISOString(),
-      };
-    });
+    const safeEvents = events.map((event) => ({
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      imageUrl: event.imageUrl,
+      date: event.date.toISOString(),
+      isActive: event.isActive,
+      createdAt: event.createdAt.toISOString(),
+      updatedAt: event.updatedAt.toISOString(),
+    })) satisfies Event[];
 
     return {
       menuItems: safeMenuItems,
@@ -50,6 +59,7 @@ async function getFeaturedData(): Promise<{
   } catch (error) {
     console.error("Database error:", error);
 
+    // 🔒 NEVER BREAK BUILD
     return {
       menuItems: [],
       events: [],

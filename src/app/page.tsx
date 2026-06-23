@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { MenuCard } from "@/components/public/MenuCard";
 import { EventCard } from "@/components/public/EventCard";
 
-export const revalidate = 60; // ISR
+export const revalidate = 60;
 
 import type { MenuItem, Event } from "@/types";
 
@@ -25,26 +25,35 @@ async function getFeaturedData(): Promise<{
       }),
     ]);
 
-    // ✅ Serialize dates (VERY IMPORTANT for Next.js)
-    const safeMenuItems = menuItems.map((item) => ({
-      ...item,
-      createdAt: item.createdAt.toISOString(),
-      updatedAt: item.updatedAt.toISOString(),
-    })) as unknown as MenuItem[];
+    // ✅ FIX: convert Date → string AND force correct typing
+    const safeMenuItems: MenuItem[] = menuItems.map((item) => {
+      return {
+        ...item,
+        createdAt: item.createdAt.toISOString(),
+        updatedAt: item.updatedAt.toISOString(),
+      };
+    });
 
-    const safeEvents = events.map((event) => ({
-      ...event,
-      date: event.date.toISOString(),
-      createdAt: event.createdAt.toISOString(),
-      updatedAt: event.updatedAt.toISOString(),
-    })) as unknown as Event[];
+    const safeEvents: Event[] = events.map((event) => {
+      return {
+        ...event,
+        date: event.date.toISOString(),
+        createdAt: event.createdAt.toISOString(),
+        updatedAt: event.updatedAt.toISOString(),
+      };
+    });
 
-    return { menuItems: safeMenuItems, events: safeEvents };
+    return {
+      menuItems: safeMenuItems,
+      events: safeEvents,
+    };
   } catch (error) {
-    console.error("❌ Database error:", error);
+    console.error("Database error:", error);
 
-    // Prevent build crash on Vercel
-    return { menuItems: [], events: [] };
+    return {
+      menuItems: [],
+      events: [],
+    };
   }
 }
 
@@ -70,8 +79,7 @@ export default async function HomePage() {
           </h1>
 
           <p className="text-zinc-400 text-lg max-w-xl mx-auto mb-10 leading-relaxed">
-            Award-winning cuisine, curated cocktails, and warm Kenyan
-            hospitality — all in one place.
+            Award-winning cuisine, curated cocktails, and warm Kenyan hospitality.
           </p>
 
           <div className="flex gap-4 justify-center flex-wrap">
@@ -93,7 +101,7 @@ export default async function HomePage() {
       </section>
 
       {/* STATS */}
-      <section className="grid grid-cols-2 md:grid-cols-4 border-b bg-white dark:bg-zinc-900">
+      <section className="grid grid-cols-2 md:grid-cols-4 bg-white dark:bg-zinc-900 border-b">
         {[
           { num: "12+", label: "Years serving Nairobi" },
           { num: "4.8★", label: "Google rating" },
@@ -109,7 +117,7 @@ export default async function HomePage() {
         ))}
       </section>
 
-      {/* MENU */}
+      {/* FEATURED MENU */}
       <section className="max-w-5xl mx-auto px-4 py-12">
         <div className="flex justify-between mb-6">
           <h2 className="text-xl font-semibold">Popular dishes</h2>
@@ -120,15 +128,9 @@ export default async function HomePage() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {menuItems.length > 0 ? (
-            menuItems.map((item) => (
-              <MenuCard key={item.id} item={item} />
-            ))
-          ) : (
-            <p className="text-sm text-zinc-500">
-              No menu items available
-            </p>
-          )}
+          {menuItems.map((item) => (
+            <MenuCard key={item.id} item={item} />
+          ))}
         </div>
       </section>
 
@@ -164,19 +166,19 @@ export default async function HomePage() {
         <div className="grid md:grid-cols-3 gap-4">
           {[
             {
-              text: "The nyama choma here is elite 🔥",
+              text: "The food is amazing 🔥",
               name: "James Njenga",
               init: "JN",
               rating: 5,
             },
             {
-              text: "Rooms are clean and comfortable 💯",
+              text: "Best rooms in Nairobi 💯",
               name: "Amina Wanjiku",
               init: "AW",
               rating: 5,
             },
             {
-              text: "Friday vibes unmatched 🎶",
+              text: "Great vibes every weekend 🎶",
               name: "David Mutua",
               init: "DM",
               rating: 4,

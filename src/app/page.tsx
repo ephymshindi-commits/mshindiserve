@@ -7,10 +7,7 @@ export const revalidate = 60;
 
 import type { MenuItem, Event } from "@/types";
 
-async function getFeaturedData(): Promise<{
-  menuItems: MenuItem[];
-  events: Event[];
-}> {
+async function getFeaturedData() {
   try {
     const [menuItems, events] = await Promise.all([
       prisma.menuItem.findMany({
@@ -25,45 +22,10 @@ async function getFeaturedData(): Promise<{
       }),
     ]);
 
-    // 🔒 STRICT SERIALIZATION (NO PRISMA LEAK)
-    const safeMenuItems: MenuItem[] = menuItems.map((item) => ({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      price: item.price,
-      category: item.category,
-      imageUrl: item.imageUrl,
-      emoji: item.emoji,
-      isAvailable: item.isAvailable,
-      isFeatured: item.isFeatured,
-      sortOrder: item.sortOrder,
-      createdAt: item.createdAt.toISOString(),
-      updatedAt: item.updatedAt.toISOString(),
-    }));
-
-    const safeEvents: Event[] = events.map((event) => ({
-      id: event.id,
-      title: event.title,
-      description: event.description,
-      imageUrl: event.imageUrl,
-      date: event.date.toISOString(),
-      isActive: event.isActive,
-      createdAt: event.createdAt.toISOString(),
-      updatedAt: event.updatedAt.toISOString(),
-    }));
-
-    return {
-      menuItems: safeMenuItems,
-      events: safeEvents,
-    };
+    return { menuItems, events };
   } catch (error) {
     console.error("Database error:", error);
-
-    // 🔒 NEVER BREAK BUILD
-    return {
-      menuItems: [],
-      events: [],
-    };
+    return { menuItems: [], events: [] };
   }
 }
 
@@ -138,9 +100,14 @@ export default async function HomePage() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {menuItems.map((item) => (
-            <MenuCard key={item.id} item={item} />
-          ))}
+          {menuItems.map((item) => {
+            const safeItem: MenuItem = {
+              ...item,
+              createdAt: typeof item.createdAt === "string" ? item.createdAt : item.createdAt.toISOString(),
+              updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : item.updatedAt.toISOString(),
+            };
+            return <MenuCard key={item.id} item={safeItem} />;
+          })}
         </div>
       </section>
 
@@ -159,9 +126,15 @@ export default async function HomePage() {
             </div>
 
             <div className="space-y-3">
-              {events.map((event) => (
-                <EventCard key={event.id} event={event} />
-              ))}
+              {events.map((event) => {
+                const safeEvent: Event = {
+                  ...event,
+                  date: typeof event.date === "string" ? event.date : event.date.toISOString(),
+                  createdAt: typeof event.createdAt === "string" ? event.createdAt : event.createdAt.toISOString(),
+                  updatedAt: typeof event.updatedAt === "string" ? event.updatedAt : event.updatedAt.toISOString(),
+                };
+                return <EventCard key={event.id} event={safeEvent} />;
+              })}
             </div>
           </div>
         </section>

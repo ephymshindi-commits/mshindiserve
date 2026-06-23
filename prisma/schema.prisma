@@ -1,0 +1,269 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  CUSTOMER
+  KITCHEN
+  RECEPTION
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+}
+
+enum TicketStatus {
+  ACTIVE
+  USED
+  CANCELLED
+}
+
+enum MenuCategory {
+  GRILL
+  DRINKS
+  SPECIALS
+  SEAFOOD
+  STARTERS
+  DESSERTS
+}
+
+// ─── MODELS ───────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String?  @unique
+  passwordHash String
+  role         Role     @default(CUSTOMER)
+  avatarUrl    String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders        Order[]
+  bookings      Booking[]
+  tickets       Ticket[]
+  refreshTokens RefreshToken[]
+  activityLogs  ActivityLog[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model MenuItem {
+  id          String       @id @default(cuid())
+  name        String
+  description String
+  price       Int          // in KES cents (multiply by 100)
+  category    MenuCategory
+  imageUrl    String?
+  emoji       String       @default("🍽️")
+  isAvailable Boolean      @default(true)
+  isFeatured  Boolean      @default(false)
+  sortOrder   Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  orderItems OrderItem[]
+
+  @@map("menu_items")
+}
+
+model Order {
+  id            String        @id @default(cuid())
+  orderNumber   String        @unique
+  userId        String
+  status        OrderStatus   @default(PENDING)
+  totalAmount   Int           // in KES cents
+  notes         String?
+  tableNumber   String?
+  isDelivery    Boolean       @default(false)
+  deliveryAddr  String?
+  paymentStatus PaymentStatus @default(PENDING)
+  mpesaRef      String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id])
+  orderItems OrderItem[]
+  payment    Payment?
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  menuItemId String
+  quantity   Int
+  unitPrice  Int      // price at time of order
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@map("order_items")
+}
+
+model Room {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  pricePerNight Int    // in KES cents
+  capacity    Int      @default(2)
+  amenities   String[] // array of amenity strings
+  imageUrl    String?
+  emoji       String   @default("🛏️")
+  isAvailable Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bookings Booking[]
+
+  @@map("rooms")
+}
+
+model Booking {
+  id            String        @id @default(cuid())
+  bookingNumber String        @unique
+  userId        String
+  roomId        String
+  checkIn       DateTime
+  checkOut      DateTime
+  guests        Int           @default(1)
+  totalAmount   Int           // in KES cents
+  status        BookingStatus @default(PENDING)
+  specialReqs   String?
+  paymentStatus PaymentStatus @default(PENDING)
+  mpesaRef      String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id])
+  room    Room    @relation(fields: [roomId], references: [id])
+  payment Payment?
+
+  @@map("bookings")
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  date        DateTime
+  venue       String   @default("Fine Breeze Bar & Grill")
+  ticketPrice Int      // in KES cents
+  totalSeats  Int
+  soldSeats   Int      @default(0)
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tickets Ticket[]
+
+  @@map("events")
+}
+
+model Ticket {
+  id         String       @id @default(cuid())
+  ticketCode String       @unique
+  userId     String
+  eventId    String
+  quantity   Int          @default(1)
+  totalAmount Int         // in KES cents
+  status     TicketStatus @default(ACTIVE)
+  usedAt     DateTime?
+  paymentStatus PaymentStatus @default(PENDING)
+  mpesaRef   String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id])
+  event   Event   @relation(fields: [eventId], references: [id])
+  payment Payment?
+
+  @@map("tickets")
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  mpesaRef        String?       @unique
+  checkoutRequestId String?     @unique
+  merchantRequestId String?
+  amount          Int           // in KES cents
+  phoneNumber     String
+  status          PaymentStatus @default(PENDING)
+  resultCode      String?
+  resultDesc      String?
+  orderId         String?       @unique
+  bookingId       String?       @unique
+  ticketId        String?       @unique
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  order   Order?   @relation(fields: [orderId], references: [id])
+  booking Booking? @relation(fields: [bookingId], references: [id])
+  ticket  Ticket?  @relation(fields: [ticketId], references: [id])
+
+  @@map("payments")
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  resource  String
+  resourceId String?
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("activity_logs")
+}

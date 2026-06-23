@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyAccessToken } from "@/lib/jwt";
 import { prisma } from "@/lib/prisma";
 import type { JWTPayload, Role } from "@/types";
+import { Prisma } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -9,23 +10,24 @@ export interface AuthenticatedRequest extends NextRequest {
   user: JWTPayload;
 }
 
-type Handler = (req: AuthenticatedRequest, ctx: { params: Record<string, string> }) => Promise<NextResponse>;
+// Using `any` for ctx — each route defines its own params shape
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Handler = (req: AuthenticatedRequest, ctx: any) => Promise<NextResponse>;
 
 // ─── Extract Bearer token ─────────────────────────────────────────────────────
 
 function extractToken(req: NextRequest): string | null {
   const auth = req.headers.get("authorization");
   if (auth?.startsWith("Bearer ")) return auth.slice(7);
-  // Also check httpOnly cookie fallback
   const cookie = req.cookies.get("ms_access_token");
   return cookie?.value ?? null;
 }
 
 // ─── withAuth middleware ───────────────────────────────────────────────────────
-// Wraps a route handler to require a valid JWT
 
 export function withAuth(handler: Handler, requiredRoles?: Role[]) {
-  return async (req: NextRequest, ctx: { params: Record<string, string> }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return async (req: NextRequest, ctx: any) => {
     const token = extractToken(req);
 
     if (!token) {
@@ -45,7 +47,6 @@ export function withAuth(handler: Handler, requiredRoles?: Role[]) {
       );
     }
 
-    // Role check
     if (requiredRoles && !requiredRoles.includes(payload.role)) {
       return NextResponse.json(
         { success: false, error: "Insufficient permissions" },
@@ -58,14 +59,11 @@ export function withAuth(handler: Handler, requiredRoles?: Role[]) {
   };
 }
 
-// ─── In-memory rate limiter (swap for Upstash Redis in production) ─────────────
+// ─── In-memory rate limiter ────────────────────────────────────────────────────
 
 const rateLimitStore = new Map<string, { count: number; reset: number }>();
 
-export function rateLimit(
-  windowMs: number = 60_000,
-  max: number = 20
-) {
+export function rateLimit(windowMs: number = 60_000, max: number = 20) {
   return (req: NextRequest): NextResponse | null => {
     const ip =
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
@@ -78,7 +76,7 @@ export function rateLimit(
 
     if (!entry || now > entry.reset) {
       rateLimitStore.set(key, { count: 1, reset: now + windowMs });
-      return null; // ok
+      return null;
     }
 
     entry.count++;
@@ -119,7 +117,7 @@ export async function logActivity({
   action: string;
   resource: string;
   resourceId?: string;
-  details?: Record<string, unknown>;
+  details?: Prisma.InputJsonValue;  // ← correct Prisma Json type
   req: NextRequest;
 }) {
   try {
@@ -129,7 +127,7 @@ export async function logActivity({
         action,
         resource,
         resourceId,
-        details,
+        details: details ?? undefined,
         ipAddress:
           req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
         userAgent: req.headers.get("user-agent") ?? null,

@@ -2,24 +2,50 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { MenuCard } from "@/components/public/MenuCard";
 import { EventCard } from "@/components/public/EventCard";
-import { formatKES } from "@/lib/utils";
 
-export const revalidate = 60; // ISR: revalidate every 60s
+export const revalidate = 60; // ISR
 
-async function getFeaturedData() {
-  const [menuItems, events] = await Promise.all([
-    prisma.menuItem.findMany({
-      where: { isFeatured: true, isAvailable: true },
-      take: 4,
-      orderBy: { sortOrder: "asc" },
-    }),
-    prisma.event.findMany({
-      where: { isActive: true, date: { gte: new Date() } },
-      take: 3,
-      orderBy: { date: "asc" },
-    }),
-  ]);
-  return { menuItems, events };
+import type { MenuItem, Event } from "@/types";
+
+async function getFeaturedData(): Promise<{
+  menuItems: MenuItem[];
+  events: Event[];
+}> {
+  try {
+    const [menuItems, events] = await Promise.all([
+      prisma.menuItem.findMany({
+        where: { isFeatured: true, isAvailable: true },
+        take: 4,
+        orderBy: { sortOrder: "asc" },
+      }),
+      prisma.event.findMany({
+        where: { isActive: true, date: { gte: new Date() } },
+        take: 3,
+        orderBy: { date: "asc" },
+      }),
+    ]);
+
+    // ✅ Serialize dates (VERY IMPORTANT for Next.js)
+    const safeMenuItems = menuItems.map((item) => ({
+      ...item,
+      createdAt: item.createdAt.toISOString(),
+      updatedAt: item.updatedAt.toISOString(),
+    })) as unknown as MenuItem[];
+
+    const safeEvents = events.map((event) => ({
+      ...event,
+      date: event.date.toISOString(),
+      createdAt: event.createdAt.toISOString(),
+      updatedAt: event.updatedAt.toISOString(),
+    })) as unknown as Event[];
+
+    return { menuItems: safeMenuItems, events: safeEvents };
+  } catch (error) {
+    console.error("❌ Database error:", error);
+
+    // Prevent build crash on Vercel
+    return { menuItems: [], events: [] };
+  }
 }
 
 export default async function HomePage() {
@@ -27,32 +53,38 @@ export default async function HomePage() {
 
   return (
     <div>
-      {/* ── HERO ── */}
+      {/* HERO */}
       <section className="relative bg-zinc-950 overflow-hidden">
         <div className="absolute inset-0 bg-[url('/hero-pattern.svg')] opacity-5" />
         <div className="relative max-w-5xl mx-auto px-4 py-20 text-center">
           <span className="inline-block text-amber-500 text-xs font-medium tracking-[3px] uppercase mb-4">
             Fine Breeze Bar & Grill · Westlands, Nairobi
           </span>
+
           <h1 className="text-4xl md:text-6xl font-semibold text-white leading-tight mb-6">
             Where every meal
             <br />
-            <em className="text-amber-500 not-italic">becomes a memory</em>
+            <em className="text-amber-500 not-italic">
+              becomes a memory
+            </em>
           </h1>
+
           <p className="text-zinc-400 text-lg max-w-xl mx-auto mb-10 leading-relaxed">
             Award-winning cuisine, curated cocktails, and warm Kenyan
             hospitality — all in one place.
           </p>
+
           <div className="flex gap-4 justify-center flex-wrap">
             <Link
               href="/menu"
-              className="px-8 py-3 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-xl transition-colors"
+              className="px-8 py-3 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-xl"
             >
               Order Now
             </Link>
+
             <Link
               href="/rooms"
-              className="px-8 py-3 bg-transparent border border-zinc-600 hover:border-zinc-400 text-zinc-300 hover:text-white font-medium rounded-xl transition-colors"
+              className="px-8 py-3 border border-zinc-600 text-zinc-300 hover:text-white rounded-xl"
             >
               Book a Room
             </Link>
@@ -60,59 +92,60 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── STATS ── */}
-      <section className="grid grid-cols-2 md:grid-cols-4 border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+      {/* STATS */}
+      <section className="grid grid-cols-2 md:grid-cols-4 border-b bg-white dark:bg-zinc-900">
         {[
           { num: "12+", label: "Years serving Nairobi" },
           { num: "4.8★", label: "Google rating" },
           { num: "50+", label: "Menu items" },
           { num: "24", label: "Rooms available" },
         ].map((s, i) => (
-          <div
-            key={i}
-            className="py-6 px-4 text-center border-r border-zinc-100 dark:border-zinc-800 last:border-r-0"
-          >
-            <div className="text-2xl font-semibold text-amber-600">{s.num}</div>
-            <div className="text-xs text-zinc-500 mt-1">{s.label}</div>
+          <div key={i} className="py-6 text-center border-r last:border-r-0">
+            <div className="text-2xl font-semibold text-amber-600">
+              {s.num}
+            </div>
+            <div className="text-xs text-zinc-500">{s.label}</div>
           </div>
         ))}
       </section>
 
-      {/* ── FEATURED MENU ── */}
+      {/* MENU */}
       <section className="max-w-5xl mx-auto px-4 py-12">
-        <div className="flex items-baseline justify-between mb-6">
-          <h2 className="text-xl font-semibold text-zinc-900 dark:text-white">
-            Popular dishes
-          </h2>
-          <Link
-            href="/menu"
-            className="text-sm text-amber-600 hover:text-amber-700 font-medium"
-          >
+        <div className="flex justify-between mb-6">
+          <h2 className="text-xl font-semibold">Popular dishes</h2>
+
+          <Link href="/menu" className="text-amber-600 text-sm">
             Full menu →
           </Link>
         </div>
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {menuItems.map((item) => (
-            <MenuCard key={item.id} item={item} />
-          ))}
+          {menuItems.length > 0 ? (
+            menuItems.map((item) => (
+              <MenuCard key={item.id} item={item} />
+            ))
+          ) : (
+            <p className="text-sm text-zinc-500">
+              No menu items available
+            </p>
+          )}
         </div>
       </section>
 
-      {/* ── EVENTS ── */}
+      {/* EVENTS */}
       {events.length > 0 && (
-        <section className="bg-zinc-50 dark:bg-zinc-900/50 py-12">
+        <section className="bg-zinc-50 py-12">
           <div className="max-w-5xl mx-auto px-4">
-            <div className="flex items-baseline justify-between mb-6">
-              <h2 className="text-xl font-semibold text-zinc-900 dark:text-white">
+            <div className="flex justify-between mb-6">
+              <h2 className="text-xl font-semibold">
                 Upcoming events
               </h2>
-              <Link
-                href="/events"
-                className="text-sm text-amber-600 hover:text-amber-700 font-medium"
-              >
+
+              <Link href="/events" className="text-amber-600 text-sm">
                 All events →
               </Link>
             </div>
+
             <div className="space-y-3">
               {events.map((event) => (
                 <EventCard key={event.id} event={event} />
@@ -122,44 +155,61 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* ── TESTIMONIALS ── */}
+      {/* TESTIMONIALS */}
       <section className="max-w-5xl mx-auto px-4 py-12">
-        <h2 className="text-xl font-semibold text-zinc-900 dark:text-white mb-6">
+        <h2 className="text-xl font-semibold mb-6">
           What our guests say
         </h2>
+
         <div className="grid md:grid-cols-3 gap-4">
           {[
-            { text: "The nyama choma here is unlike anything in Nairobi. Perfectly seasoned, generous portions.", name: "James Njenga", init: "JN", rating: 5 },
-            { text: "Booked a room for the weekend — spotless, comfortable, and the breakfast buffet is incredible.", name: "Amina Wanjiku", init: "AW", rating: 5 },
-            { text: "Live music on Fridays is everything. Great vibe, attentive staff, solid cocktails.", name: "David Mutua", init: "DM", rating: 4 },
+            {
+              text: "The nyama choma here is elite 🔥",
+              name: "James Njenga",
+              init: "JN",
+              rating: 5,
+            },
+            {
+              text: "Rooms are clean and comfortable 💯",
+              name: "Amina Wanjiku",
+              init: "AW",
+              rating: 5,
+            },
+            {
+              text: "Friday vibes unmatched 🎶",
+              name: "David Mutua",
+              init: "DM",
+              rating: 4,
+            },
           ].map((t, i) => (
-            <div
-              key={i}
-              className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl p-5"
-            >
-              <div className="text-amber-500 text-sm mb-3">
-                {"★".repeat(t.rating)}{"☆".repeat(5 - t.rating)}
+            <div key={i} className="border rounded-2xl p-5">
+              <div className="text-amber-500 mb-3">
+                {"★".repeat(t.rating)}
+                {"☆".repeat(5 - t.rating)}
               </div>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed mb-4">
-                "{t.text}"
-              </p>
+
+              <p className="text-sm mb-4">"{t.text}"</p>
+
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-amber-600 flex items-center justify-center text-white text-xs font-medium">
+                <div className="w-7 h-7 rounded-full bg-amber-600 text-white flex items-center justify-center text-xs">
                   {t.init}
                 </div>
-                <span className="text-sm font-medium text-zinc-900 dark:text-white">{t.name}</span>
+                <span className="text-sm font-medium">
+                  {t.name}
+                </span>
               </div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* ── CTA / CONTACT ── */}
-      <section className="bg-zinc-950 text-center py-14 px-4">
-        <p className="text-xs tracking-[3px] text-amber-500 uppercase mb-3">Find us</p>
-        <h2 className="text-2xl font-semibold text-white mb-2">Westlands, Nairobi · Kenya</h2>
+      {/* FOOTER */}
+      <section className="bg-zinc-950 text-center py-14">
+        <h2 className="text-2xl text-white mb-2">
+          Westlands, Nairobi · Kenya
+        </h2>
         <p className="text-zinc-500 text-sm">
-          Mon–Sun · 11:00 AM – 2:00 AM &nbsp;|&nbsp; +254 700 123 456
+          Mon–Sun · 11AM – 2AM | +254 700 123 456
         </p>
       </section>
     </div>

@@ -9,7 +9,7 @@ export interface User {
   phone: string | null;
   role: Role;
   avatarUrl: string | null;
-  createdAt: string;
+  createdAt: string | Date;
 }
 
 export interface AuthTokens {
@@ -42,13 +42,13 @@ export interface MenuItem {
   description: string;
   price: number;
   category: MenuCategory;
-  imageUrl: string | null;   // Prisma returns null, not undefined
+  imageUrl: string | null;
   emoji: string;
   isAvailable: boolean;
   isFeatured: boolean;
   sortOrder: number;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | Date;
+  updatedAt: string | Date;
 }
 
 // ─── Cart ─────────────────────────────────────────────────────────────────────
@@ -92,8 +92,8 @@ export interface Order {
   paymentStatus: PaymentStatus;
   mpesaRef: string | null;
   orderItems: OrderItem[];
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | Date;
+  updatedAt: string | Date;
 }
 
 // ─── Rooms ────────────────────────────────────────────────────────────────────
@@ -109,8 +109,8 @@ export interface Room {
   emoji: string;
   isAvailable: boolean;
   sortOrder: number;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | Date;
+  updatedAt: string | Date;
 }
 
 export type BookingStatus =
@@ -125,15 +125,15 @@ export interface Booking {
   bookingNumber: string;
   user: User;
   room: Room;
-  checkIn: string;
-  checkOut: string;
+  checkIn: string | Date;
+  checkOut: string | Date;
   guests: number;
   totalAmount: number;
   status: BookingStatus;
   specialReqs: string | null;
   paymentStatus: PaymentStatus;
   mpesaRef: string | null;
-  createdAt: string;
+  createdAt: string | Date;
 }
 
 // ─── Events & Tickets ─────────────────────────────────────────────────────────
@@ -142,15 +142,15 @@ export interface Event {
   id: string;
   title: string;
   description: string;
-  date: string;
+  date: string | Date;
   venue: string;
   ticketPrice: number;
   totalSeats: number;
   soldSeats: number;
   imageUrl: string | null;
   isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | Date;
+  updatedAt: string | Date;
 }
 
 export type TicketStatus = "ACTIVE" | "USED" | "CANCELLED";
@@ -164,7 +164,7 @@ export interface Ticket {
   totalAmount: number;
   status: TicketStatus;
   paymentStatus: PaymentStatus;
-  createdAt: string;
+  createdAt: string | Date;
 }
 
 // ─── Payments ─────────────────────────────────────────────────────────────────

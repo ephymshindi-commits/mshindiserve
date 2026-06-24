@@ -5,8 +5,6 @@ import { EventCard } from "@/components/public/EventCard";
 
 export const revalidate = 60;
 
-import type { MenuItem, Event } from "@/types";
-
 async function getFeaturedData() {
   try {
     const [menuItems, events] = await Promise.all([
@@ -100,14 +98,9 @@ export default async function HomePage() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {menuItems.map((item) => {
-            const safeItem: MenuItem = {
-              ...item,
-              createdAt: typeof item.createdAt === "string" ? item.createdAt : item.createdAt.toISOString(),
-              updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : item.updatedAt.toISOString(),
-            };
-            return <MenuCard key={item.id} item={safeItem} />;
-          })}
+          {menuItems.map((item) => (
+            <MenuCard key={item.id} item={item} />
+          ))}
         </div>
       </section>
 
@@ -126,15 +119,9 @@ export default async function HomePage() {
             </div>
 
             <div className="space-y-3">
-              {events.map((event) => {
-                const safeEvent: Event = {
-                  ...event,
-                  date: typeof event.date === "string" ? event.date : event.date.toISOString(),
-                  createdAt: typeof event.createdAt === "string" ? event.createdAt : event.createdAt.toISOString(),
-                  updatedAt: typeof event.updatedAt === "string" ? event.updatedAt : event.updatedAt.toISOString(),
-                };
-                return <EventCard key={event.id} event={safeEvent} />;
-              })}
+              {events.map((event) => (
+                <EventCard key={event.id} event={event} />
+              ))}
             </div>
           </div>
         </section>

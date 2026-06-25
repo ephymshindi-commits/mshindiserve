@@ -2,7 +2,9 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import toast from "react-hot-toast";
 import { AuthModal } from "@/components/shared/AuthModal";
+import type { User } from "@/types";
 
 export function AuthPage({ defaultTab }: { defaultTab: "login" | "register" }) {
   const router = useRouter();
@@ -15,8 +17,14 @@ export function AuthPage({ defaultTab }: { defaultTab: "login" | "register" }) {
     router.replace("/");
   }
 
-  function success() {
+  function success(user: User) {
     setOpen(false);
+    if (next.startsWith("/admin") && user.role !== "ADMIN") {
+      toast.error("That account is not allowed to access the admin panel.");
+      router.replace("/");
+      return;
+    }
+
     router.replace(next);
   }
 
@@ -31,8 +39,8 @@ export function AuthPage({ defaultTab }: { defaultTab: "login" | "register" }) {
             Sign in to continue
           </h1>
           <p className="mt-4 text-base leading-7 text-zinc-600 dark:text-zinc-400">
-            Your account keeps food orders, room bookings, event tickets, and admin tools tied
-            to the right guest or team member.
+            Your account keeps food orders, room bookings, and event tickets tied to the right
+            guest or team member.
           </p>
         </div>
       </section>

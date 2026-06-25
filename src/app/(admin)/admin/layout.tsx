@@ -32,7 +32,7 @@ const NAV = [
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user, isAuthenticated, clearAuth, setUser } = useAuthStore();
+  const { user, clearAuth, setUser } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
   const [checking, setChecking] = useState(true);
@@ -41,27 +41,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     let cancelled = false;
 
     async function verifyAdmin() {
-      if (isAuthenticated && user) {
-        if (user.role !== "ADMIN") {
-          router.replace("/");
-          return;
-        }
-        setChecking(false);
-        return;
-      }
-
       try {
         const res = await authApi.me();
         const sessionUser = res.data.data.user;
         if (cancelled) return;
         setUser(sessionUser);
         if (sessionUser.role !== "ADMIN") {
-          router.replace("/");
+          clearAuth();
+          toast.error("Admin access requires an administrator account.");
+          router.replace(`/login?next=${encodeURIComponent(pathname || "/admin/dashboard")}&reason=admin_required`);
           return;
         }
         setChecking(false);
       } catch {
-        if (!cancelled) router.replace("/login?next=/admin/dashboard");
+        if (!cancelled) {
+          clearAuth();
+          router.replace(`/login?next=${encodeURIComponent(pathname || "/admin/dashboard")}`);
+        }
       }
     }
 
@@ -70,7 +66,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, router, setUser, user]);
+  }, [clearAuth, pathname, router, setUser]);
 
   async function handleLogout() {
     await authApi.logout().catch(() => undefined);

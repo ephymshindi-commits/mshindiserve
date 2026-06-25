@@ -28,8 +28,11 @@ type LiquorTransaction = {
   type: LiquorTransactionType;
   quantity: number;
   outlet: LiquorOutlet;
+  unitRetailPrice: string | null;
+  totalAmount: string | null;
   description: string | null;
   timestamp: string;
+  liquorItem?: { id: string; name: string; sku: string; category: LiquorCategory } | null;
   user?: { name: string; email: string } | null;
 };
 
@@ -47,6 +50,23 @@ type LiquorItem = {
   createdAt: string;
   updatedAt: string;
   transactions: LiquorTransaction[];
+};
+
+type LiquorSummary = {
+  allTimeSalesRevenue: number;
+  allTimeUnitsSold: number;
+  allTimeSaleCount: number;
+  todaySalesRevenue: number;
+  todayUnitsSold: number;
+  todaySaleCount: number;
+  recentTransactions: LiquorTransaction[];
+  topItems: Array<{
+    liquorItemId: string;
+    name: string;
+    sku: string;
+    quantity: number;
+    revenue: number;
+  }>;
 };
 
 const categories: LiquorCategory[] = [
@@ -90,7 +110,9 @@ function statusClass(status: string) {
 
 export function LiquorAdminClient() {
   const [items, setItems] = useState<LiquorItem[]>([]);
+  const [summary, setSummary] = useState<LiquorSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
 
@@ -114,8 +136,9 @@ export function LiquorAdminClient() {
     description: "",
   });
 
-  async function loadItems() {
-    setLoading(true);
+  async function loadItems(quiet = false) {
+    if (quiet) setRefreshing(true);
+    else setLoading(true);
     try {
       const res = await fetch("/api/admin/liquor", {
         credentials: "include",
@@ -126,6 +149,7 @@ export function LiquorAdminClient() {
 
       const loadedItems: LiquorItem[] = payload.data;
       setItems(loadedItems);
+      setSummary(payload.summary ?? null);
       setStockForm((current) => ({
         ...current,
         itemId: current.itemId || loadedItems[0]?.id || "",
@@ -134,11 +158,14 @@ export function LiquorAdminClient() {
       toast.error(error instanceof Error ? error.message : "Could not load liquor inventory.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
   useEffect(() => {
     loadItems();
+    const interval = window.setInterval(() => loadItems(true), 15000);
+    return () => window.clearInterval(interval);
   }, []);
 
   async function createItem(event: React.FormEvent) {
@@ -235,11 +262,11 @@ export function LiquorAdminClient() {
           </p>
         </div>
         <button
-          onClick={loadItems}
-          disabled={loading}
+          onClick={() => loadItems(true)}
+          disabled={loading || refreshing}
           className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
         >
-          {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+          {loading || refreshing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
           Refresh
         </button>
       </div>
@@ -249,6 +276,70 @@ export function LiquorAdminClient() {
         <Stat label="Low stock" value={stats.low.toLocaleString()} tone={stats.low > 0 ? "warning" : "neutral"} />
         <Stat label="Out of stock" value={stats.out.toLocaleString()} tone={stats.out > 0 ? "danger" : "neutral"} />
         <Stat label="Retail value" value={money(stats.retailValue)} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="text-sm font-semibold text-zinc-950 dark:text-white">Liquor earnings</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <MiniStat label="Today" value={money(summary?.todaySalesRevenue ?? 0)} />
+            <MiniStat label="Units today" value={(summary?.todayUnitsSold ?? 0).toLocaleString()} />
+            <MiniStat label="All-time sales" value={money(summary?.allTimeSalesRevenue ?? 0)} />
+          </div>
+          <div className="mt-5">
+            <p className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">
+              Top movers this month
+            </p>
+            {summary?.topItems?.length ? (
+              <div className="space-y-3">
+                {summary.topItems.map((item) => (
+                  <div key={item.liquorItemId} className="flex items-center justify-between gap-3 text-sm">
+                    <div>
+                      <p className="font-medium text-zinc-950 dark:text-white">{item.name}</p>
+                      <p className="text-xs text-zinc-500">{item.sku} - {item.quantity} sold</p>
+                    </div>
+                    <span className="font-semibold text-amber-700 dark:text-amber-400">
+                      {money(item.revenue)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-500">No liquor sales recorded this month yet.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="text-sm font-semibold text-zinc-950 dark:text-white">Recent stock records</h2>
+          <div className="mt-4 space-y-3">
+            {summary?.recentTransactions?.length ? (
+              summary.recentTransactions.slice(0, 8).map((transaction) => (
+                <div
+                  key={transaction.id}
+                  className="flex items-start justify-between gap-3 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-950"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-zinc-950 dark:text-white">
+                      {transaction.liquorItem?.name ?? "Liquor item"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-zinc-500">
+                      {label(transaction.type)} - {transaction.quantity} at {label(transaction.outlet)}
+                    </p>
+                  </div>
+                  <span className="text-xs font-medium text-zinc-500">
+                    {new Date(transaction.timestamp).toLocaleTimeString("en-KE", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-zinc-500">No stock movements recorded yet.</p>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
@@ -590,6 +681,15 @@ function Stat({
     >
       <p className="text-xs text-zinc-500">{label}</p>
       <p className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-white">{value}</p>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-950">
+      <p className="text-xs text-zinc-500">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-zinc-950 dark:text-white">{value}</p>
     </div>
   );
 }

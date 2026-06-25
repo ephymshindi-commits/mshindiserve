@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, BedDouble, CalendarDays, MapPin, ShieldCheck, ShoppingBag } from "lucide-react";
+import { ArrowRight, BedDouble, CalendarDays, Camera, MapPin, ShoppingBag, Wine } from "lucide-react";
 import { EventCard } from "@/components/public/EventCard";
 import { MenuCard } from "@/components/public/MenuCard";
 import { demoMenuItems, eventSeedData, getDemoEvents, menuSeedData } from "@/lib/fallback-data";
@@ -77,11 +77,11 @@ export default async function HomePage() {
               Fine Breeze Bar & Grill, Westlands
             </div>
             <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-white md:text-6xl">
-              Dining, rooms, and events in one polished guest platform.
+              Good food, cold drinks, restful rooms.
             </h1>
             <p className="mt-5 max-w-2xl text-base leading-8 text-zinc-300 md:text-lg">
-              MshindiServe lets guests order food, reserve rooms, buy event tickets, and pay
-              securely with M-Pesa from a single premium hospitality experience.
+              Fine Breeze brings together grilled favorites, a lively bar, comfortable stays,
+              and weekend events in Westlands.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
@@ -97,6 +97,12 @@ export default async function HomePage() {
                 Book a room <BedDouble size={16} />
               </Link>
               <Link
+                href="/bar"
+                className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/20 px-5 text-sm font-medium text-white transition hover:bg-white/10"
+              >
+                View bar <Wine size={16} />
+              </Link>
+              <Link
                 href="/events"
                 className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/20 px-5 text-sm font-medium text-white transition hover:bg-white/10"
               >
@@ -108,10 +114,10 @@ export default async function HomePage() {
           <div className="rounded-lg border border-white/15 bg-white/10 p-4 backdrop-blur-md">
             <div className="grid grid-cols-2 gap-3">
               {[
-                ["Live menu", `${menuItems.length}+ picks`],
-                ["Room booking", "Conflict-safe"],
-                ["Event tickets", "Seat tracking"],
-                ["Admin", "Live dashboard"],
+                ["Grill", "Fresh daily"],
+                ["Bar", "Cold pours"],
+                ["Rooms", "Quiet stays"],
+                ["Events", "Weekend plans"],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-lg bg-white/10 p-4">
                   <p className="text-lg font-semibold text-white">{value}</p>
@@ -119,11 +125,12 @@ export default async function HomePage() {
                 </div>
               ))}
             </div>
-            <div className="mt-4 rounded-lg bg-emerald-500/10 p-4 text-sm leading-6 text-emerald-100">
-              <ShieldCheck size={18} className="mb-2" />
-              Auth-gated checkout, server-side booking validation, ticket inventory tracking,
-              and admin visibility are ready for a business demo.
-            </div>
+            <Link
+              href="/gallery"
+              className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-white text-sm font-medium text-zinc-950 transition hover:bg-amber-50"
+            >
+              See the place <Camera size={16} />
+            </Link>
           </div>
         </div>
       </section>
@@ -133,7 +140,7 @@ export default async function HomePage() {
           {[
             ["12+", "Years serving Nairobi"],
             ["4.8", "Guest rating"],
-            ["M-Pesa", "Checkout ready"],
+            ["Bar", "Open late"],
             ["24/7", "Online reservations"],
           ].map(([value, label]) => (
             <div key={label} className="p-4 text-center">
@@ -151,7 +158,7 @@ export default async function HomePage() {
               Popular dishes
             </p>
             <h2 className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-white">
-              Menu favorites
+              Guest favorites
             </h2>
           </div>
           <Link href="/menu" className="inline-flex items-center gap-1 text-sm font-medium text-amber-700 dark:text-amber-400">
@@ -174,7 +181,7 @@ export default async function HomePage() {
                 Upcoming events
               </p>
               <h2 className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-white">
-                Nights worth booking
+                Nights to remember
               </h2>
             </div>
             <Link href="/events" className="inline-flex items-center gap-1 text-sm font-medium text-amber-700 dark:text-amber-400">
@@ -193,9 +200,9 @@ export default async function HomePage() {
       <section className="mx-auto max-w-6xl px-4 py-12">
         <div className="grid gap-4 md:grid-cols-3">
           {[
-            ["James Njenga", "The ordering flow feels fast, and the grill platter always lands hot."],
-            ["Amina Wanjiku", "Room booking is clear, quick, and easy to pay for."],
-            ["David Mutua", "The event tickets and M-Pesa checkout make weekend plans simple."],
+            ["James Njenga", "The grill platter was excellent and the service was sharp."],
+            ["Amina Wanjiku", "Clean rooms, calm night, and breakfast was ready on time."],
+            ["David Mutua", "Great music, good drinks, and an easy place to bring friends."],
           ].map(([name, text]) => (
             <div key={name} className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="mb-3 text-sm font-semibold text-amber-600">★★★★★</div>

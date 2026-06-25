@@ -21,11 +21,16 @@ const transactionSchema = z.object({
 function serializeResult(result: Awaited<ReturnType<typeof processLiquorSale>>) {
   return {
     ...result,
-    item: {
-      ...result.item,
-      costPrice: result.item.costPrice.toString(),
-      retailPrice: result.item.retailPrice.toString(),
-    },
+      item: {
+        ...result.item,
+        costPrice: result.item.costPrice.toString(),
+        retailPrice: result.item.retailPrice.toString(),
+      },
+      transaction: {
+        ...result.transaction,
+        unitRetailPrice: result.transaction.unitRetailPrice?.toString() ?? null,
+        totalAmount: result.transaction.totalAmount?.toString() ?? null,
+      },
   };
 }
 

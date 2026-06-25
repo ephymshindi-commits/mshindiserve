@@ -38,6 +38,7 @@ export async function processLiquorSale(
           status: true,
           currentStock: true,
           lowStockThreshold: true,
+          retailPrice: true,
         },
       });
 
@@ -89,6 +90,8 @@ export async function processLiquorSale(
           quantity,
           outlet: normalizedOutlet,
           userId,
+          unitRetailPrice: item.retailPrice,
+          totalAmount: item.retailPrice.mul(quantity),
           description: `Sale from ${normalizedOutlet.toLowerCase()}`,
         },
       });

@@ -50,6 +50,85 @@ function serializeLiquorItem(item: any) {
     ...item,
     costPrice: item.costPrice?.toString(),
     retailPrice: item.retailPrice?.toString(),
+    transactions: item.transactions?.map(serializeTransaction) ?? [],
+  };
+}
+
+function serializeTransaction(transaction: any) {
+  return {
+    ...transaction,
+    unitRetailPrice: transaction.unitRetailPrice?.toString() ?? null,
+    totalAmount: transaction.totalAmount?.toString() ?? null,
+  };
+}
+
+function startOfToday() {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function startOfMonth() {
+  const date = new Date();
+  date.setDate(1);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function decimalToNumber(value: Prisma.Decimal | null) {
+  return value ? Number(value.toString()) : 0;
+}
+
+async function getLiquorSummary() {
+  const [saleTotals, todaySaleTotals, recentTransactions, topItems] = await Promise.all([
+    prisma.liquorTransaction.aggregate({
+      where: { type: "SALE" },
+      _sum: { totalAmount: true, quantity: true },
+      _count: true,
+    }),
+    prisma.liquorTransaction.aggregate({
+      where: { type: "SALE", timestamp: { gte: startOfToday() } },
+      _sum: { totalAmount: true, quantity: true },
+      _count: true,
+    }),
+    prisma.liquorTransaction.findMany({
+      take: 16,
+      orderBy: { timestamp: "desc" },
+      include: {
+        liquorItem: { select: { id: true, name: true, sku: true, category: true } },
+        user: { select: { id: true, name: true, email: true } },
+      },
+    }),
+    prisma.liquorTransaction.groupBy({
+      by: ["liquorItemId"],
+      where: { type: "SALE", timestamp: { gte: startOfMonth() } },
+      _sum: { quantity: true, totalAmount: true },
+      orderBy: { _sum: { quantity: "desc" } },
+      take: 5,
+    }),
+  ]);
+
+  const topItemRecords = await prisma.liquorItem.findMany({
+    where: { id: { in: topItems.map((item) => item.liquorItemId) } },
+    select: { id: true, name: true, sku: true },
+  });
+  const itemMap = new Map(topItemRecords.map((item) => [item.id, item]));
+
+  return {
+    allTimeSalesRevenue: decimalToNumber(saleTotals._sum.totalAmount),
+    allTimeUnitsSold: saleTotals._sum.quantity ?? 0,
+    allTimeSaleCount: saleTotals._count,
+    todaySalesRevenue: decimalToNumber(todaySaleTotals._sum.totalAmount),
+    todayUnitsSold: todaySaleTotals._sum.quantity ?? 0,
+    todaySaleCount: todaySaleTotals._count,
+    recentTransactions: recentTransactions.map(serializeTransaction),
+    topItems: topItems.map((item) => ({
+      liquorItemId: item.liquorItemId,
+      name: itemMap.get(item.liquorItemId)?.name ?? "Unknown item",
+      sku: itemMap.get(item.liquorItemId)?.sku ?? "Unknown SKU",
+      quantity: item._sum.quantity ?? 0,
+      revenue: decimalToNumber(item._sum.totalAmount),
+    })),
   };
 }
 
@@ -72,9 +151,12 @@ export const GET = withAuth(
         },
       });
 
+      const summary = await getLiquorSummary();
+
       return NextResponse.json({
         success: true,
         data: items.map(serializeLiquorItem),
+        summary,
       });
     } catch (error) {
       const dbResponse = databaseErrorResponse(error);

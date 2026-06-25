@@ -19,6 +19,8 @@ async function getDashboardStats() {
       recentOrders,
       popularItemsRaw,
       totalUsers,
+      liquorPayments,
+      liquorSalesToday,
     ] = await Promise.all([
       prisma.payment.findMany({
         where: { status: "COMPLETED", createdAt: { gte: startOfDay(subDays(today, 6)) } },
@@ -63,6 +65,14 @@ async function getDashboardStats() {
         take: 5,
       }),
       prisma.user.count({ where: { role: "CUSTOMER" } }),
+      prisma.liquorTransaction.findMany({
+        where: { type: "SALE", timestamp: { gte: startOfDay(subDays(today, 6)) } },
+        select: { totalAmount: true, timestamp: true },
+      }),
+      prisma.liquorTransaction.aggregate({
+        where: { type: "SALE", timestamp: { gte: startOfDay(today) } },
+        _sum: { totalAmount: true },
+      }),
     ]);
 
     const revenueByDay = Array.from({ length: 7 }, (_, index) => {
@@ -71,14 +81,21 @@ async function getDashboardStats() {
       const amount = payments
         .filter((payment) => formatDateFns(new Date(payment.createdAt), "yyyy-MM-dd") === key)
         .reduce((sum, payment) => sum + payment.amount, 0);
+      const liquorAmount = liquorPayments
+        .filter((payment) => formatDateFns(new Date(payment.timestamp), "yyyy-MM-dd") === key)
+        .reduce((sum, payment) => sum + Number(payment.totalAmount ?? 0) * 100, 0);
 
-      return { date: formatDateFns(date, "EEE"), amount: Math.round(amount / 100) };
+      return { date: formatDateFns(date, "EEE"), amount: Math.round((amount + liquorAmount) / 100) };
     });
 
     const todayKey = formatDateFns(today, "yyyy-MM-dd");
     const todayRevenue = payments
       .filter((payment) => formatDateFns(new Date(payment.createdAt), "yyyy-MM-dd") === todayKey)
       .reduce((sum, payment) => sum + payment.amount, 0);
+    const liquorRevenue = liquorPayments.reduce(
+      (sum, payment) => sum + Number(payment.totalAmount ?? 0),
+      0
+    );
 
     const menuItems = await prisma.menuItem.findMany({
       where: { id: { in: popularItemsRaw.map((item) => item.menuItemId) } },
@@ -87,7 +104,8 @@ async function getDashboardStats() {
     const menuMap = new Map(menuItems.map((item) => [item.id, item.name]));
 
     return {
-      todayRevenue: Math.round(todayRevenue / 100),
+      todayRevenue: Math.round(todayRevenue / 100 + Number(liquorSalesToday._sum.totalAmount ?? 0)),
+      liquorRevenue: Math.round(liquorRevenue),
       activeOrders,
       roomOccupancy: totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0,
       ticketsSoldToday,
@@ -107,6 +125,7 @@ async function getDashboardStats() {
       roomOccupancy: 0,
       ticketsSoldToday: 0,
       totalUsers: 0,
+      liquorRevenue: 0,
       revenueByDay: Array.from({ length: 7 }, (_, index) => ({
         date: formatDateFns(subDays(today, 6 - index), "EEE"),
         amount: 0,
@@ -137,9 +156,10 @@ export default async function AdminDashboardPage() {
         </Link>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         {[
           ["Today revenue", `KES ${stats.todayRevenue.toLocaleString()}`],
+          ["Liquor, 7 days", `KES ${stats.liquorRevenue.toLocaleString()}`],
           ["Active orders", stats.activeOrders],
           ["Room occupancy", `${stats.roomOccupancy}%`],
           ["Tickets today", stats.ticketsSoldToday],

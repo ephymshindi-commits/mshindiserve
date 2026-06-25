@@ -171,6 +171,8 @@ model LiquorTransaction {
   quantity     Float
   outlet       LiquorOutlet
   userId       String?
+  unitRetailPrice Decimal?              @db.Decimal(12, 2)
+  totalAmount  Decimal?                 @db.Decimal(12, 2)
   description  String?
   timestamp    DateTime              @default(now())
 

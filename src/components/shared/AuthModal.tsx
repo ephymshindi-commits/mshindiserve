@@ -8,11 +8,12 @@ import { authApi } from "@/lib/api";
 import { getSupabaseBrowserClient } from "@/lib/supabase-client";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
+import type { User } from "@/types";
 
 interface AuthModalProps {
   open: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (user: User) => void;
   defaultTab?: "login" | "register";
 }
 
@@ -114,7 +115,7 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
       setAuth(user, accessToken);
       toast.success(`Welcome back, ${user.name.split(" ")[0]}`, { id: toastId });
       resetAll();
-      onSuccess?.();
+      onSuccess?.(user);
       onClose();
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? "Sign in failed", { id: toastId });
@@ -147,7 +148,7 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
       setAuth(user, accessToken);
       toast.success(`Welcome, ${user.name.split(" ")[0]}`, { id: toastId });
       resetAll();
-      onSuccess?.();
+      onSuccess?.(user);
       onClose();
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? "Registration failed", { id: toastId });

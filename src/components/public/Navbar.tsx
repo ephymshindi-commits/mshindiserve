@@ -25,8 +25,10 @@ import { useAuthStore } from "@/store/authStore";
 const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/menu", label: "Menu" },
+  { href: "/bar", label: "Bar" },
   { href: "/rooms", label: "Rooms" },
   { href: "/events", label: "Events" },
+  { href: "/gallery", label: "Gallery" },
 ];
 
 export function Navbar() {

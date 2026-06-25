@@ -51,9 +51,18 @@ export async function POST(req: NextRequest) {
     });
 
     const dummyHash = "$argon2id$v=19$m=65536,t=3,p=4$placeholder";
-    const valid = user
-      ? await argon2.verify(user.passwordHash, password)
-      : await argon2.verify(dummyHash, password).catch(() => false);
+    const canUsePassword = user?.passwordHash.startsWith("$argon2");
+    const valid =
+      user && canUsePassword
+        ? await argon2.verify(user.passwordHash, password).catch(() => false)
+        : await argon2.verify(dummyHash, password).catch(() => false);
+
+    if (user && !canUsePassword) {
+      return NextResponse.json(
+        { success: false, error: "This account uses Google sign-in." },
+        { status: 401 }
+      );
+    }
 
     if (!user || !valid) {
       return NextResponse.json(

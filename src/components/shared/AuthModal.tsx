@@ -1,10 +1,11 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { Eye, EyeOff, Loader2, Lock, UserPlus, X } from "lucide-react";
+import { Chrome, Eye, EyeOff, Loader2, Lock, UserPlus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { authApi } from "@/lib/api";
+import { getSupabaseBrowserClient } from "@/lib/supabase-client";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
 
@@ -38,10 +39,28 @@ function validateRegister(name: string, phone: string, email: string, password: 
   return errors;
 }
 
+function safeNextPath() {
+  if (typeof window === "undefined") return "/";
+
+  const params = new URLSearchParams(window.location.search);
+  const explicitNext = params.get("next");
+  if (explicitNext && explicitNext.startsWith("/") && !explicitNext.startsWith("//")) {
+    return explicitNext;
+  }
+
+  const currentPath = `${window.location.pathname}${window.location.search}`;
+  if (currentPath.startsWith("/login") || currentPath.startsWith("/register")) {
+    return "/";
+  }
+
+  return currentPath;
+}
+
 export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: AuthModalProps) {
   const [tab, setTab] = useState<"login" | "register">(defaultTab);
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const { setAuth } = useAuthStore();
 
   const [loginEmail, setLoginEmail] = useState("");
@@ -68,6 +87,7 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
     setRegPassword("");
     setRegErrors({});
     setSubmitting(false);
+    setGoogleLoading(false);
     setShowPassword(false);
   }
 
@@ -136,6 +156,38 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
     }
   }
 
+  async function handleGoogleSignIn() {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      toast.error(
+        "Google sign-in is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
+      );
+      return;
+    }
+
+    setGoogleLoading(true);
+    const toastId = toast.loading("Opening Google sign-in");
+
+    try {
+      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(
+        safeNextPath()
+      )}`;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+          queryParams: { prompt: "select_account" },
+        },
+      });
+
+      if (error) throw error;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not start Google sign-in.";
+      toast.error(message, { id: toastId });
+      setGoogleLoading(false);
+    }
+  }
+
   return (
     <Dialog.Root open={open} onOpenChange={(nextOpen) => !nextOpen && handleClose()}>
       <Dialog.Portal>
@@ -176,6 +228,22 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
                 {value === "login" ? "Sign in" : "Register"}
               </button>
             ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={submitting || googleLoading}
+            className="mb-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white text-sm font-medium text-zinc-900 transition hover:border-amber-400 hover:bg-amber-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:hover:border-amber-500 dark:hover:bg-zinc-800"
+          >
+            {googleLoading ? <Loader2 size={16} className="animate-spin" /> : <Chrome size={16} />}
+            Continue with Google
+          </button>
+
+          <div className="mb-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+            <span className="text-xs font-medium text-zinc-400">or use email</span>
+            <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
           </div>
 
           {tab === "login" ? (

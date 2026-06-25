@@ -10,7 +10,8 @@ export function AuthPage({ defaultTab }: { defaultTab: "login" | "register" }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [open, setOpen] = useState(true);
-  const next = searchParams.get("next") ?? "/";
+  const rawNext = searchParams.get("next");
+  const next = rawNext?.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
 
   function leave() {
     setOpen(false);

@@ -31,16 +31,12 @@ export async function hashPassword(password: string) {
 }
 
 export function isPasswordHash(hash: string | null | undefined) {
-  return Boolean(hash && (hash.startsWith(`${CURRENT_SCHEME}:`) || hash.startsWith("$argon2")));
+  return Boolean(hash && hash.startsWith(`${CURRENT_SCHEME}:`));
 }
 
 export async function verifyPassword(password: string, hash: string) {
   if (hash.startsWith(`${CURRENT_SCHEME}:`)) {
     return verifyPbkdf2Password(password, hash);
-  }
-
-  if (hash.startsWith("$argon2")) {
-    return verifyLegacyArgon2Password(password, hash);
   }
 
   return false;
@@ -65,14 +61,4 @@ async function verifyPbkdf2Password(password: string, hash: string) {
   const candidateKey = (await pbkdf2Async(password, salt, iterations, storedKey.length, digest)) as Buffer;
 
   return storedKey.length === candidateKey.length && timingSafeEqual(storedKey, candidateKey);
-}
-
-async function verifyLegacyArgon2Password(password: string, hash: string) {
-  try {
-    const argon2 = await import("argon2");
-    return await argon2.verify(hash, password).catch(() => false);
-  } catch (error) {
-    console.warn("[Auth] Legacy argon2 hash could not be verified in this runtime.", error);
-    return false;
-  }
 }

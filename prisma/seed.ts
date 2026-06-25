@@ -1,7 +1,17 @@
 import { PrismaClient, MenuCategory, Role } from "@prisma/client";
 import { hashPassword } from "../src/lib/passwords";
+import { normalizePrismaDatabaseUrl } from "../src/lib/database-url";
 
-const prisma = new PrismaClient();
+const databaseUrl = normalizePrismaDatabaseUrl();
+const prisma = new PrismaClient(
+  databaseUrl
+    ? {
+        datasources: {
+          db: { url: databaseUrl },
+        },
+      }
+    : undefined
+);
 
 async function main() {
   console.log("🌱 Seeding MshindiServe database...");

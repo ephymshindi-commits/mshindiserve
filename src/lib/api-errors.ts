@@ -19,6 +19,14 @@ export function databaseConfigError(error: unknown) {
     return "DATABASE_URL is missing from the environment.";
   }
 
+  if (message.includes("prepared statement") && message.includes("already exists")) {
+    return "Supabase pooler needs Prisma PgBouncer mode. Redeploy the latest code or add ?pgbouncer=true&connection_limit=1 to DATABASE_URL.";
+  }
+
+  if (message.includes("The table") && message.includes("does not exist")) {
+    return "Database tables are missing. Run `npx prisma db push` against your Supabase project.";
+  }
+
   return null;
 }
 

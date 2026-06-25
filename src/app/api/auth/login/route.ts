@@ -5,7 +5,7 @@ import { signAccessToken, signRefreshToken } from "@/lib/jwt";
 import { rateLimit, logActivity } from "@/lib/middleware";
 import { setAuthCookies } from "@/lib/auth-cookies";
 import { databaseErrorResponse } from "@/lib/api-errors";
-import { DUMMY_PASSWORD_HASH, hashPassword, isPasswordHash, verifyPassword } from "@/lib/passwords";
+import { DUMMY_PASSWORD_HASH, isPasswordHash, verifyPassword } from "@/lib/passwords";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,9 +59,16 @@ export async function POST(req: NextRequest) {
         ? await verifyPassword(password, user.passwordHash)
         : await verifyPassword(password, DUMMY_PASSWORD_HASH);
 
-    if (user && !canUsePassword) {
+    if (user?.passwordHash.startsWith("oauth:")) {
       return NextResponse.json(
         { success: false, error: "This account uses Google sign-in." },
+        { status: 401 }
+      );
+    }
+
+    if (user && !canUsePassword) {
+      return NextResponse.json(
+        { success: false, error: "This account needs a password reset. Contact support." },
         { status: 401 }
       );
     }
@@ -71,13 +78,6 @@ export async function POST(req: NextRequest) {
         { success: false, error: "Invalid email or password" },
         { status: 401 }
       );
-    }
-
-    if (user.passwordHash.startsWith("$argon2")) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { passwordHash: await hashPassword(password) },
-      });
     }
 
     if (!user.isActive) {

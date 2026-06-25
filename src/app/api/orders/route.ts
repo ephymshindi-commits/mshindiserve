@@ -1,13 +1,36 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { withAuth, rateLimit, logActivity } from "@/lib/middleware";
 import type { AuthenticatedRequest } from "@/lib/middleware";
+import { menuSeedData } from "@/lib/fallback-data";
 
 const limiter = rateLimit(60_000, 30);
 
-// ─── GET /api/orders ──────────────────────────────────────────────────────────
-// ADMIN/KITCHEN: all orders | CUSTOMER: their own orders
+const orderStatuses = [
+  "PENDING",
+  "CONFIRMED",
+  "PREPARING",
+  "READY",
+  "DELIVERED",
+  "CANCELLED",
+] as const;
+
+export const dynamic = "force-dynamic";
+
+function parseStatusFilter(status: string | null) {
+  if (!status) return undefined;
+  const values = status
+    .split(",")
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean);
+
+  const valid = values.filter((value): value is (typeof orderStatuses)[number] =>
+    orderStatuses.includes(value as (typeof orderStatuses)[number])
+  );
+
+  return valid.length > 0 ? { in: valid } : undefined;
+}
 
 export const GET = withAuth(
   async (req: AuthenticatedRequest) => {
@@ -15,16 +38,15 @@ export const GET = withAuth(
     if (limited) return limited;
 
     const { searchParams } = req.nextUrl;
-    const status = searchParams.get("status");
-    const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
-    const limit = Math.min(50, parseInt(searchParams.get("limit") ?? "20"));
+    const page = Math.max(1, Number.parseInt(searchParams.get("page") ?? "1", 10) || 1);
+    const limit = Math.min(50, Number.parseInt(searchParams.get("limit") ?? "20", 10) || 20);
     const skip = (page - 1) * limit;
-
     const isStaff = ["ADMIN", "KITCHEN"].includes(req.user.role);
+    const statusFilter = parseStatusFilter(searchParams.get("status"));
 
     const where = {
       ...(isStaff ? {} : { userId: req.user.sub }),
-      ...(status ? { status: status.toUpperCase() as any } : {}),
+      ...(statusFilter ? { status: statusFilter } : {}),
     };
 
     const [orders, total] = await Promise.all([
@@ -33,7 +55,7 @@ export const GET = withAuth(
         include: {
           user: { select: { id: true, name: true, email: true, phone: true } },
           orderItems: {
-            include: { menuItem: { select: { id: true, name: true, emoji: true, price: true } } },
+            include: { menuItem: { select: { id: true, name: true, category: true, price: true } } },
           },
         },
         orderBy: { createdAt: "desc" },
@@ -55,11 +77,8 @@ export const GET = withAuth(
   ["CUSTOMER", "KITCHEN", "ADMIN"]
 );
 
-// ─── POST /api/orders ─────────────────────────────────────────────────────────
-// CUSTOMER: place a new order
-
 const orderItemSchema = z.object({
-  menuItemId: z.string().cuid(),
+  menuItemId: z.string().min(1),
   quantity: z.number().int().min(1).max(20),
   notes: z.string().max(200).optional(),
 });
@@ -71,6 +90,12 @@ const createOrderSchema = z.object({
   deliveryAddr: z.string().max(300).optional(),
   notes: z.string().max(500).optional(),
 });
+
+function newOrderNumber() {
+  const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const rand = Math.floor(1000 + Math.random() * 9000);
+  return `MS-${datePart}-${rand}`;
+}
 
 export const POST = withAuth(
   async (req: AuthenticatedRequest) => {
@@ -93,12 +118,18 @@ export const POST = withAuth(
     }
 
     const { items, tableNumber, isDelivery, deliveryAddr, notes } = parsed.data;
+    const menuItemIds = Array.from(new Set(items.map((item) => item.menuItemId)));
 
-    // Validate all menu items exist & are available
-    const menuItemIds = items.map((i) => i.menuItemId);
-    const menuItems = await prisma.menuItem.findMany({
+    let menuItems = await prisma.menuItem.findMany({
       where: { id: { in: menuItemIds }, isAvailable: true },
     });
+
+    if (menuItems.length !== menuItemIds.length) {
+      await prisma.menuItem.createMany({ data: menuSeedData(), skipDuplicates: true });
+      menuItems = await prisma.menuItem.findMany({
+        where: { id: { in: menuItemIds }, isAvailable: true },
+      });
+    }
 
     if (menuItems.length !== menuItemIds.length) {
       return NextResponse.json(
@@ -107,21 +138,15 @@ export const POST = withAuth(
       );
     }
 
-    // Calculate total
-    const menuMap = new Map(menuItems.map((m) => [m.id, m]));
+    const menuMap = new Map(menuItems.map((item) => [item.id, item]));
     const totalAmount = items.reduce((sum, item) => {
-      const menuItem = menuMap.get(item.menuItemId)!;
-      return sum + menuItem.price * item.quantity;
+      const menuItem = menuMap.get(item.menuItemId);
+      return sum + (menuItem?.price ?? 0) * item.quantity;
     }, 0);
-
-    // Generate order number: MS-YYYYMMDD-XXXX
-    const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const rand = Math.floor(1000 + Math.random() * 9000);
-    const orderNumber = `MS-${datePart}-${rand}`;
 
     const order = await prisma.order.create({
       data: {
-        orderNumber,
+        orderNumber: newOrderNumber(),
         userId: req.user.sub,
         totalAmount,
         tableNumber,
@@ -139,9 +164,7 @@ export const POST = withAuth(
         },
       },
       include: {
-        orderItems: {
-          include: { menuItem: true },
-        },
+        orderItems: { include: { menuItem: true } },
       },
     });
 
@@ -150,7 +173,7 @@ export const POST = withAuth(
       action: "CREATE_ORDER",
       resource: "orders",
       resourceId: order.id,
-      details: { orderNumber, totalAmount, itemCount: items.length },
+      details: { orderNumber: order.orderNumber, totalAmount, itemCount: items.length },
       req,
     });
 

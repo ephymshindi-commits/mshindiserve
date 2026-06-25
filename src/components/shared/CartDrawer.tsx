@@ -1,28 +1,38 @@
 "use client";
 
-import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { CheckCircle2, Loader2, Minus, Plus, ShoppingBag, Smartphone, Trash2, X } from "lucide-react";
+import { useState } from "react";
 import toast from "react-hot-toast";
-import { X, Minus, Plus, ShoppingBag, Smartphone, Loader2 } from "lucide-react";
-import { useCartStore } from "@/store/cartStore";
-import { useAuthStore } from "@/store/authStore";
+import { AuthModal } from "@/components/shared/AuthModal";
 import { ordersApi, paymentsApi } from "@/lib/api";
 import { formatKES } from "@/lib/utils";
-import { AuthModal } from "@/components/shared/AuthModal";
+import { labelFromEnum } from "@/lib/visuals";
+import { useAuthStore } from "@/store/authStore";
+import { useCartStore } from "@/store/cartStore";
 
 type CheckoutStep = "cart" | "payment" | "success";
 
 export function CartDrawer() {
-  const { items, isOpen, closeCart, updateQuantity, removeItem, clearCart, totalAmount } =
-    useCartStore();
+  const {
+    items,
+    isOpen,
+    closeCart,
+    updateQuantity,
+    removeItem,
+    clearCart,
+    totalAmount,
+  } = useCartStore();
   const { isAuthenticated } = useAuthStore();
 
   const [step, setStep] = useState<CheckoutStep>("cart");
   const [phone, setPhone] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [confirmedOrder, setConfirmedOrder] = useState<{ number: string; mpesaRef: string } | null>(null);
+  const [confirmedOrder, setConfirmedOrder] = useState<{ number: string } | null>(null);
   const [showAuth, setShowAuth] = useState(false);
+
+  const total = totalAmount();
 
   function handleCheckout() {
     if (!isAuthenticated) {
@@ -33,34 +43,32 @@ export function CartDrawer() {
   }
 
   async function handlePay() {
-    const phoneRegex = /^(\+254|0)[17]\d{8}$/;
-    if (!phoneRegex.test(phone)) {
-      setPhoneError("Enter a valid Safaricom number (e.g. 0712 345 678)");
+    const normalizedPhone = phone.replace(/\s/g, "");
+    if (!/^(\+254|0)[17]\d{8}$/.test(normalizedPhone)) {
+      setPhoneError("Enter a valid Safaricom number, for example 0712345678");
       return;
     }
+
     setPhoneError("");
     setIsLoading(true);
 
     try {
-      // 1. Create the order
       const orderRes = await ordersApi.create({
-        items: items.map((i) => ({
-          menuItemId: i.menuItem.id,
-          quantity: i.quantity,
-          notes: i.notes,
+        items: items.map((item) => ({
+          menuItemId: item.menuItem.id,
+          quantity: item.quantity,
+          notes: item.notes,
         })),
       });
 
       const order = orderRes.data.data;
+      await paymentsApi.stkPush({ phoneNumber: normalizedPhone, orderId: order.id });
 
-      // 2. Initiate M-Pesa STK Push
-      await paymentsApi.stkPush({ phoneNumber: phone, orderId: order.id });
-
-      setConfirmedOrder({ number: order.orderNumber, mpesaRef: "Awaiting confirmation" });
+      setConfirmedOrder({ number: order.orderNumber });
       setStep("success");
       clearCart();
     } catch (err: any) {
-      toast.error(err?.response?.data?.error ?? "Payment failed — please try again");
+      toast.error(err?.response?.data?.error ?? "Checkout failed. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -74,130 +82,146 @@ export function CartDrawer() {
     setConfirmedOrder(null);
   }
 
-  const total = totalAmount();
-
   return (
     <>
-      <Dialog.Root open={isOpen} onOpenChange={(o) => !o && handleClose()}>
+      <Dialog.Root open={isOpen} onOpenChange={(open) => !open && handleClose()}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
-          <Dialog.Content className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm bg-white dark:bg-zinc-900 shadow-2xl flex flex-col animate-slide-left">
-            {/* ── Header ── */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 dark:border-zinc-800">
-              <div className="flex items-center gap-2">
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
+          <Dialog.Content className="fixed bottom-0 right-0 top-0 z-50 flex w-full max-w-md flex-col bg-white shadow-2xl dark:bg-zinc-900">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+              <Dialog.Title className="flex items-center gap-2 text-base font-semibold text-zinc-950 dark:text-white">
                 <ShoppingBag size={18} className="text-amber-600" />
-                <span className="font-semibold text-zinc-900 dark:text-white">
-                  Your order {items.length > 0 && `(${items.length})`}
-                </span>
-              </div>
+                Your order {items.length > 0 ? `(${items.length})` : ""}
+              </Dialog.Title>
               <Dialog.Close asChild>
-                <button className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                  <X size={18} className="text-zinc-500" />
+                <button className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+                  <X size={18} />
                 </button>
               </Dialog.Close>
             </div>
 
-            {/* ── STEP: CART ── */}
             {step === "cart" && (
               <>
-                <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+                <div className="flex-1 overflow-y-auto px-5 py-4">
                   {items.length === 0 ? (
-                    <div className="text-center py-16">
-                      <div className="text-5xl mb-4">🛒</div>
-                      <p className="text-zinc-500 text-sm">Your cart is empty</p>
-                      <p className="text-zinc-400 text-xs mt-1">
-                        Add items from the menu to get started
+                    <div className="flex h-full min-h-[360px] flex-col items-center justify-center text-center">
+                      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                        <ShoppingBag size={26} />
+                      </div>
+                      <p className="text-sm font-medium text-zinc-950 dark:text-white">
+                        Your cart is empty
+                      </p>
+                      <p className="mt-1 max-w-xs text-xs leading-5 text-zinc-500">
+                        Add a few dishes from the menu and they will appear here.
                       </p>
                     </div>
                   ) : (
-                    items.map((item) => (
-                      <div key={item.menuItem.id} className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-xl flex-shrink-0">
-                          {item.menuItem.emoji}
+                    <div className="space-y-4">
+                      {items.map((item) => (
+                        <div key={item.menuItem.id} className="flex gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-xs font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                            {labelFromEnum(item.menuItem.category).slice(0, 2)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="line-clamp-1 text-sm font-medium text-zinc-950 dark:text-white">
+                                  {item.menuItem.name}
+                                </p>
+                                <p className="mt-0.5 text-xs text-zinc-500">
+                                  {formatKES(item.menuItem.price)} each
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => removeItem(item.menuItem.id)}
+                                className="rounded-md p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
+                                aria-label={`Remove ${item.menuItem.name}`}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+
+                            <div className="mt-3 flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => updateQuantity(item.menuItem.id, item.quantity - 1)}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                                  aria-label="Decrease quantity"
+                                >
+                                  <Minus size={13} />
+                                </button>
+                                <span className="w-6 text-center text-sm font-semibold">
+                                  {item.quantity}
+                                </span>
+                                <button
+                                  onClick={() => updateQuantity(item.menuItem.id, item.quantity + 1)}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                                  aria-label="Increase quantity"
+                                >
+                                  <Plus size={13} />
+                                </button>
+                              </div>
+                              <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+                                {formatKES(item.menuItem.price * item.quantity)}
+                              </p>
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">
-                            {item.menuItem.name}
-                          </p>
-                          <p className="text-xs text-amber-600 font-medium">
-                            {formatKES(item.menuItem.price * item.quantity)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => updateQuantity(item.menuItem.id, item.quantity - 1)}
-                            className="w-7 h-7 rounded-full border border-zinc-200 dark:border-zinc-700 flex items-center justify-center hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                          >
-                            <Minus size={12} />
-                          </button>
-                          <span className="text-sm font-medium w-5 text-center">
-                            {item.quantity}
-                          </span>
-                          <button
-                            onClick={() => updateQuantity(item.menuItem.id, item.quantity + 1)}
-                            className="w-7 h-7 rounded-full border border-zinc-200 dark:border-zinc-700 flex items-center justify-center hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                          >
-                            <Plus size={12} />
-                          </button>
-                        </div>
-                      </div>
-                    ))
+                      ))}
+                    </div>
                   )}
                 </div>
 
                 {items.length > 0 && (
-                  <div className="px-5 py-4 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
-                    <div className="flex justify-between text-sm">
+                  <div className="space-y-3 border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
+                    <div className="flex items-center justify-between text-sm">
                       <span className="text-zinc-500">Subtotal</span>
-                      <span className="font-semibold text-zinc-900 dark:text-white">
+                      <span className="font-semibold text-zinc-950 dark:text-white">
                         {formatKES(total)}
                       </span>
                     </div>
                     <button
                       onClick={handleCheckout}
-                      className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-xl transition-colors"
+                      className="h-11 w-full rounded-lg bg-zinc-950 text-sm font-medium text-white transition hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"
                     >
-                      Checkout → {formatKES(total)}
+                      Checkout
                     </button>
                   </div>
                 )}
               </>
             )}
 
-            {/* ── STEP: PAYMENT ── */}
             {step === "payment" && (
-              <div className="flex-1 px-5 py-6 space-y-6">
+              <div className="flex-1 space-y-6 overflow-y-auto px-5 py-6">
                 <div>
-                  <h3 className="font-semibold text-zinc-900 dark:text-white mb-1">
+                  <h3 className="text-base font-semibold text-zinc-950 dark:text-white">
                     Pay via M-Pesa
                   </h3>
-                  <p className="text-sm text-zinc-500">
-                    Enter your Safaricom number. You'll receive a prompt to confirm.
+                  <p className="mt-1 text-sm leading-6 text-zinc-500">
+                    Enter your Safaricom number. You will receive a prompt to confirm payment.
                   </p>
                 </div>
 
-                {/* Order summary */}
-                <div className="bg-zinc-50 dark:bg-zinc-800 rounded-xl p-4 space-y-2">
-                  {items.map((i) => (
-                    <div key={i.menuItem.id} className="flex justify-between text-sm">
-                      <span className="text-zinc-600 dark:text-zinc-400">
-                        {i.menuItem.emoji} {i.menuItem.name} ×{i.quantity}
-                      </span>
-                      <span className="font-medium">{formatKES(i.menuItem.price * i.quantity)}</span>
-                    </div>
-                  ))}
-                  <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700 flex justify-between font-semibold">
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
+                  <div className="space-y-2">
+                    {items.map((item) => (
+                      <div key={item.menuItem.id} className="flex justify-between gap-3 text-sm">
+                        <span className="text-zinc-600 dark:text-zinc-400">
+                          {item.menuItem.name} x {item.quantity}
+                        </span>
+                        <span className="font-medium">{formatKES(item.menuItem.price * item.quantity)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex justify-between border-t border-zinc-200 pt-3 text-sm font-semibold dark:border-zinc-800">
                     <span>Total</span>
-                    <span className="text-amber-600">{formatKES(total)}</span>
+                    <span className="text-amber-700 dark:text-amber-400">{formatKES(total)}</span>
                   </div>
                 </div>
 
-                {/* Phone input */}
-                <div>
-                  <label className="block text-xs font-medium text-zinc-500 mb-1.5">
-                    M-Pesa Phone Number
-                  </label>
-                  <div className="relative">
+                <label className="block">
+                  <span className="text-xs font-medium text-zinc-500">M-Pesa phone number</span>
+                  <div className="relative mt-1.5">
                     <Smartphone
                       size={16}
                       className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400"
@@ -205,77 +229,61 @@ export function CartDrawer() {
                     <input
                       type="tel"
                       value={phone}
-                      onChange={(e) => { setPhone(e.target.value); setPhoneError(""); }}
+                      onChange={(e) => {
+                        setPhone(e.target.value);
+                        setPhoneError("");
+                      }}
                       placeholder="+254 712 345 678"
-                      className="w-full pl-9 pr-4 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white dark:bg-zinc-800"
+                      className="h-11 w-full rounded-lg border border-zinc-200 bg-white pl-9 pr-3 text-sm text-zinc-950 outline-none transition focus:ring-2 focus:ring-amber-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
                     />
                   </div>
-                  {phoneError && <p className="text-xs text-red-500 mt-1">{phoneError}</p>}
+                  {phoneError && <p className="mt-1 text-xs text-red-600">{phoneError}</p>}
+                </label>
+
+                <div className="space-y-2">
+                  <button
+                    onClick={handlePay}
+                    disabled={isLoading}
+                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:opacity-60"
+                  >
+                    {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Smartphone size={16} />}
+                    {isLoading ? "Sending prompt" : `Send prompt - ${formatKES(total)}`}
+                  </button>
+                  <button
+                    onClick={() => setStep("cart")}
+                    className="h-10 w-full text-sm font-medium text-zinc-500 transition hover:text-zinc-800 dark:hover:text-zinc-200"
+                  >
+                    Back to cart
+                  </button>
                 </div>
-
-                <button
-                  onClick={handlePay}
-                  disabled={isLoading}
-                  className="w-full py-3 bg-green-700 hover:bg-green-800 disabled:opacity-60 text-white font-medium rounded-xl flex items-center justify-center gap-2 transition-colors"
-                >
-                  {isLoading ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <Smartphone size={16} />
-                  )}
-                  {isLoading ? "Sending STK Push…" : `Send M-Pesa Prompt · ${formatKES(total)}`}
-                </button>
-
-                <button
-                  onClick={() => setStep("cart")}
-                  className="w-full text-sm text-zinc-500 hover:text-zinc-700"
-                >
-                  ← Back to cart
-                </button>
               </div>
             )}
 
-            {/* ── STEP: SUCCESS ── */}
             {step === "success" && (
-              <div className="flex-1 flex flex-col items-center justify-center px-5 py-8 text-center">
-                <div className="text-6xl mb-4">✅</div>
-                <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-2">
-                  Order placed!
+              <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                  <CheckCircle2 size={30} />
+                </div>
+                <h3 className="text-lg font-semibold text-zinc-950 dark:text-white">
+                  Order placed
                 </h3>
-                <p className="text-sm text-zinc-500 mb-6">
-                  Check your phone to confirm the M-Pesa payment.
-                  Your order will be confirmed once payment is received.
+                <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">
+                  Check your phone to complete the payment. The kitchen will confirm your order
+                  once payment is received.
                 </p>
+
                 {confirmedOrder && (
-                  <div className="bg-zinc-50 dark:bg-zinc-800 rounded-xl p-4 w-full mb-6">
+                  <div className="mt-6 w-full rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
                     <p className="text-xs text-zinc-500">Order number</p>
-                    <p className="font-mono font-semibold text-amber-600 text-lg">
+                    <p className="mt-1 font-mono text-lg font-semibold text-amber-700 dark:text-amber-400">
                       {confirmedOrder.number}
                     </p>
                   </div>
                 )}
 
-                {/* Tracking steps */}
-                <div className="flex w-full justify-between mb-6">
-                  {["Received", "Confirmed", "Preparing", "Ready", "Delivered"].map((s, i) => (
-                    <div key={s} className="flex flex-col items-center gap-1">
-                      <div
-                        className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium ${
-                          i === 0
-                            ? "bg-amber-600 text-white"
-                            : "bg-zinc-100 dark:bg-zinc-800 text-zinc-400"
-                        }`}
-                      >
-                        {i === 0 ? "✓" : i + 1}
-                      </div>
-                      <span className="text-[10px] text-zinc-500">{s}</span>
-                    </div>
-                  ))}
-                </div>
-
                 <button
                   onClick={handleClose}
-                  className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-xl transition-colors"
+                  className="mt-6 h-11 w-full rounded-lg bg-zinc-950 text-sm font-medium text-white transition hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"
                 >
                   Done
                 </button>
@@ -285,11 +293,13 @@ export function CartDrawer() {
         </Dialog.Portal>
       </Dialog.Root>
 
-      {/* Auth gate */}
       <AuthModal
         open={showAuth}
         onClose={() => setShowAuth(false)}
-        onSuccess={() => { setShowAuth(false); setStep("payment"); }}
+        onSuccess={() => {
+          setShowAuth(false);
+          setStep("payment");
+        }}
       />
     </>
   );

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { clearAuthCookies } from "@/lib/auth-cookies";
 
 export async function POST(req: NextRequest) {
   const token = req.cookies.get("ms_refresh_token")?.value;
@@ -11,13 +12,7 @@ export async function POST(req: NextRequest) {
 
   const response = NextResponse.json({ success: true, message: "Logged out" });
 
-  response.cookies.set("ms_refresh_token", "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 0,
-    path: "/",
-  });
+  clearAuthCookies(response);
 
   return response;
 }

@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { Eye, EyeOff, Loader2, Lock, UserPlus, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { X, Lock, UserPlus, Eye, EyeOff } from "lucide-react";
 import { authApi } from "@/lib/api";
-import { useAuthStore } from "@/store/authStore";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/authStore";
 
 interface AuthModalProps {
   open: boolean;
@@ -15,28 +15,28 @@ interface AuthModalProps {
   defaultTab?: "login" | "register";
 }
 
-// ─── Validation helpers ───────────────────────────────────────────────────────
-
 function validateLogin(email: string, password: string) {
   const errors: Record<string, string> = {};
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = "Enter a valid email";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = "Enter a valid email";
   if (!password) errors.password = "Password is required";
   return errors;
 }
 
 function validateRegister(name: string, phone: string, email: string, password: string) {
   const errors: Record<string, string> = {};
-  if (!name || name.trim().length < 2) errors.name = "Name must be at least 2 characters";
-  if (phone && !/^(\+254|0)[17]\d{8}$/.test(phone.replace(/\s/g, "")))
+  const normalizedPhone = phone.replace(/\s/g, "");
+
+  if (name.trim().length < 2) errors.name = "Name must be at least 2 characters";
+  if (phone && !/^(\+254|0)[17]\d{8}$/.test(normalizedPhone)) {
     errors.phone = "Enter a valid Safaricom number";
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = "Enter a valid email";
-  if (!password || password.length < 8) errors.password = "At least 8 characters";
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = "Enter a valid email";
+  if (password.length < 8) errors.password = "At least 8 characters";
   else if (!/[A-Z]/.test(password)) errors.password = "Include an uppercase letter";
   else if (!/[0-9]/.test(password)) errors.password = "Include a number";
+
   return errors;
 }
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: AuthModalProps) {
   const [tab, setTab] = useState<"login" | "register">(defaultTab);
@@ -44,22 +44,31 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
   const [submitting, setSubmitting] = useState(false);
   const { setAuth } = useAuthStore();
 
-  // Login form state
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginErrors, setLoginErrors] = useState<Record<string, string>>({});
 
-  // Register form state
   const [regName, setRegName] = useState("");
   const [regPhone, setRegPhone] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [regPassword, setRegPassword] = useState("");
   const [regErrors, setRegErrors] = useState<Record<string, string>>({});
 
+  useEffect(() => {
+    if (open) setTab(defaultTab);
+  }, [defaultTab, open]);
+
   function resetAll() {
-    setLoginEmail(""); setLoginPassword(""); setLoginErrors({});
-    setRegName(""); setRegPhone(""); setRegEmail(""); setRegPassword(""); setRegErrors({});
-    setSubmitting(false); setShowPassword(false);
+    setLoginEmail("");
+    setLoginPassword("");
+    setLoginErrors({});
+    setRegName("");
+    setRegPhone("");
+    setRegEmail("");
+    setRegPassword("");
+    setRegErrors({});
+    setSubmitting(false);
+    setShowPassword(false);
   }
 
   function handleClose() {
@@ -69,16 +78,21 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    const errors = validateLogin(loginEmail, loginPassword);
-    if (Object.keys(errors).length > 0) { setLoginErrors(errors); return; }
-    setLoginErrors({});
+    const errors = validateLogin(loginEmail.trim(), loginPassword);
+    if (Object.keys(errors).length > 0) {
+      setLoginErrors(errors);
+      return;
+    }
+
     setSubmitting(true);
-    const toastId = toast.loading("Signing in…");
+    setLoginErrors({});
+    const toastId = toast.loading("Signing in");
+
     try {
-      const res = await authApi.login(loginEmail, loginPassword);
+      const res = await authApi.login(loginEmail.trim(), loginPassword);
       const { user, accessToken } = res.data.data;
       setAuth(user, accessToken);
-      toast.success(`Welcome back, ${user.name.split(" ")[0]}! 👋`, { id: toastId });
+      toast.success(`Welcome back, ${user.name.split(" ")[0]}`, { id: toastId });
       resetAll();
       onSuccess?.();
       onClose();
@@ -91,21 +105,27 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
-    const errors = validateRegister(regName, regPhone, regEmail, regPassword);
-    if (Object.keys(errors).length > 0) { setRegErrors(errors); return; }
-    setRegErrors({});
+    const normalizedPhone = regPhone.replace(/\s/g, "");
+    const errors = validateRegister(regName, regPhone, regEmail.trim(), regPassword);
+    if (Object.keys(errors).length > 0) {
+      setRegErrors(errors);
+      return;
+    }
+
     setSubmitting(true);
-    const toastId = toast.loading("Creating your account…");
+    setRegErrors({});
+    const toastId = toast.loading("Creating account");
+
     try {
       const res = await authApi.register({
         name: regName.trim(),
         email: regEmail.trim(),
-        phone: regPhone.trim() || undefined,
+        phone: normalizedPhone || undefined,
         password: regPassword,
       });
       const { user, accessToken } = res.data.data;
       setAuth(user, accessToken);
-      toast.success(`Account created! Welcome, ${user.name.split(" ")[0]}! 🎉`, { id: toastId });
+      toast.success(`Welcome, ${user.name.split(" ")[0]}`, { id: toastId });
       resetAll();
       onSuccess?.();
       onClose();
@@ -117,95 +137,71 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => !o && handleClose()}>
+    <Dialog.Root open={open} onOpenChange={(nextOpen) => !nextOpen && handleClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 animate-fade-in" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl p-6 animate-slide-up">
-
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-2xl dark:bg-zinc-900">
+          <div className="mb-6 flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">
+              <Dialog.Title className="text-lg font-semibold text-zinc-950 dark:text-white">
                 Welcome to MshindiServe
-              </h2>
-              <p className="text-sm text-zinc-500 mt-0.5">
-                {tab === "login" ? "Sign in to continue" : "Create your account"}
-              </p>
+              </Dialog.Title>
+              <Dialog.Description className="mt-1 text-sm text-zinc-500">
+                {tab === "login" ? "Sign in to continue" : "Create your guest account"}
+              </Dialog.Description>
             </div>
             <Dialog.Close asChild>
-              <button className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-                <X size={18} className="text-zinc-500" />
+              <button className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+                <X size={18} />
               </button>
             </Dialog.Close>
           </div>
 
-          {/* Tab switcher */}
-          <div className="flex bg-zinc-100 dark:bg-zinc-800 rounded-xl p-1 mb-6">
-            {(["login", "register"] as const).map((t) => (
+          <div className="mb-6 grid grid-cols-2 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
+            {(["login", "register"] as const).map((value) => (
               <button
-                key={t}
+                key={value}
                 type="button"
-                onClick={() => { setTab(t); setShowPassword(false); }}
+                onClick={() => {
+                  setTab(value);
+                  setShowPassword(false);
+                }}
                 className={cn(
-                  "flex-1 py-2 text-sm font-medium rounded-lg transition-all",
-                  tab === t
-                    ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm"
-                    : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                  "h-9 rounded-md text-sm font-medium transition",
+                  tab === value
+                    ? "bg-white text-zinc-950 shadow-sm dark:bg-zinc-700 dark:text-white"
+                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
                 )}
               >
-                {t === "login" ? "Sign in" : "Create account"}
+                {value === "login" ? "Sign in" : "Register"}
               </button>
             ))}
           </div>
 
-          {/* ── LOGIN FORM ── */}
-          {tab === "login" && (
+          {tab === "login" ? (
             <form onSubmit={handleLogin} className="space-y-4" noValidate>
               <Field label="Email" error={loginErrors.email}>
                 <input
                   type="email"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="you@email.com"
+                  placeholder="you@example.com"
                   autoComplete="email"
                   className={inputCls}
                 />
               </Field>
-              <Field label="Password" error={loginErrors.password}>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="••••••••"
-                    autoComplete="current-password"
-                    className={cn(inputCls, "pr-10")}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </Field>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-medium rounded-xl transition-colors"
-              >
-                <Lock size={16} />
-                {submitting ? "Signing in…" : "Sign in securely"}
-              </button>
-              <p className="text-center text-xs text-zinc-400">
-                Protected by JWT · Your data is encrypted
-              </p>
+              <PasswordField
+                label="Password"
+                value={loginPassword}
+                onChange={setLoginPassword}
+                showPassword={showPassword}
+                setShowPassword={setShowPassword}
+                error={loginErrors.password}
+                autoComplete="current-password"
+              />
+              <SubmitButton submitting={submitting} icon="login" label="Sign in securely" busy="Signing in" />
             </form>
-          )}
-
-          {/* ── REGISTER FORM ── */}
-          {tab === "register" && (
+          ) : (
             <form onSubmit={handleRegister} className="space-y-4" noValidate>
               <Field label="Full name" error={regErrors.name}>
                 <input
@@ -217,7 +213,7 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
                   className={inputCls}
                 />
               </Field>
-              <Field label="Phone (M-Pesa) — optional" error={regErrors.phone}>
+              <Field label="Phone (M-Pesa) - optional" error={regErrors.phone}>
                 <input
                   type="tel"
                   value={regPhone}
@@ -232,38 +228,21 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
                   type="email"
                   value={regEmail}
                   onChange={(e) => setRegEmail(e.target.value)}
-                  placeholder="you@email.com"
+                  placeholder="you@example.com"
                   autoComplete="email"
                   className={inputCls}
                 />
               </Field>
-              <Field label="Password" error={regErrors.password}>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={regPassword}
-                    onChange={(e) => setRegPassword(e.target.value)}
-                    placeholder="At least 8 characters"
-                    autoComplete="new-password"
-                    className={cn(inputCls, "pr-10")}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </Field>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-medium rounded-xl transition-colors"
-              >
-                <UserPlus size={16} />
-                {submitting ? "Creating account…" : "Create account"}
-              </button>
+              <PasswordField
+                label="Password"
+                value={regPassword}
+                onChange={setRegPassword}
+                showPassword={showPassword}
+                setShowPassword={setShowPassword}
+                error={regErrors.password}
+                autoComplete="new-password"
+              />
+              <SubmitButton submitting={submitting} icon="register" label="Create account" busy="Creating account" />
             </form>
           )}
         </Dialog.Content>
@@ -272,10 +251,8 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
   );
 }
 
-// ─── Shared field wrapper ─────────────────────────────────────────────────────
-
 const inputCls =
-  "w-full px-3 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-amber-500 transition";
+  "h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:ring-2 focus:ring-amber-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white";
 
 function Field({
   label,
@@ -287,10 +264,80 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
-      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">{label}</label>
-      {children}
-      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
-    </div>
+    <label className="block">
+      <span className="text-xs font-medium text-zinc-500">{label}</span>
+      <div className="mt-1.5">{children}</div>
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </label>
+  );
+}
+
+function PasswordField({
+  label,
+  value,
+  onChange,
+  showPassword,
+  setShowPassword,
+  error,
+  autoComplete,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  showPassword: boolean;
+  setShowPassword: (value: boolean) => void;
+  error?: string;
+  autoComplete: string;
+}) {
+  return (
+    <Field label={label} error={error}>
+      <div className="relative">
+        <input
+          type={showPassword ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="At least 8 characters"
+          autoComplete={autoComplete}
+          className={cn(inputCls, "pr-10")}
+        />
+        <button
+          type="button"
+          onClick={() => setShowPassword(!showPassword)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 transition hover:text-zinc-700 dark:hover:text-zinc-200"
+          aria-label={showPassword ? "Hide password" : "Show password"}
+        >
+          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+    </Field>
+  );
+}
+
+function SubmitButton({
+  submitting,
+  icon,
+  label,
+  busy,
+}: {
+  submitting: boolean;
+  icon: "login" | "register";
+  label: string;
+  busy: string;
+}) {
+  return (
+    <button
+      type="submit"
+      disabled={submitting}
+      className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-zinc-950 text-sm font-medium text-white transition hover:bg-amber-700 disabled:opacity-60 dark:bg-amber-600 dark:hover:bg-amber-500"
+    >
+      {submitting ? (
+        <Loader2 size={16} className="animate-spin" />
+      ) : icon === "login" ? (
+        <Lock size={16} />
+      ) : (
+        <UserPlus size={16} />
+      )}
+      {submitting ? busy : label}
+    </button>
   );
 }

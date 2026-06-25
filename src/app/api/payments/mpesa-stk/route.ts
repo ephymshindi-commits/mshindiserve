@@ -1,21 +1,30 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { withAuth, rateLimit } from "@/lib/middleware";
 import { initiateStkPush } from "@/lib/mpesa";
 import type { AuthenticatedRequest } from "@/lib/middleware";
 
-const limiter = rateLimit(60_000, 5); // 5 payment attempts per minute
+const limiter = rateLimit(60_000, 5);
 
 const stkSchema = z.object({
-  phoneNumber: z
-    .string()
-    .regex(/^(\+254|0)[17]\d{8}$/, "Enter a valid Safaricom number"),
-  // Exactly one of these must be provided
-  orderId: z.string().cuid().optional(),
-  bookingId: z.string().cuid().optional(),
-  ticketId: z.string().cuid().optional(),
+  phoneNumber: z.string().regex(/^(\+254|0)[17]\d{8}$/, "Enter a valid Safaricom number"),
+  orderId: z.string().min(1).optional(),
+  bookingId: z.string().min(1).optional(),
+  ticketId: z.string().min(1).optional(),
 });
+
+export const dynamic = "force-dynamic";
+
+function hasMpesaConfig() {
+  return Boolean(
+    process.env.MPESA_CONSUMER_KEY &&
+      process.env.MPESA_CONSUMER_SECRET &&
+      process.env.MPESA_SHORTCODE &&
+      process.env.MPESA_PASSKEY &&
+      process.env.MPESA_CALLBACK_URL
+  );
+}
 
 export const POST = withAuth(
   async (req: AuthenticatedRequest) => {
@@ -38,16 +47,15 @@ export const POST = withAuth(
     }
 
     const { phoneNumber, orderId, bookingId, ticketId } = parsed.data;
-
     const sourceCount = [orderId, bookingId, ticketId].filter(Boolean).length;
+
     if (sourceCount !== 1) {
       return NextResponse.json(
-        { success: false, error: "Provide exactly one of orderId, bookingId, or ticketId" },
+        { success: false, error: "Provide exactly one payment source" },
         { status: 400 }
       );
     }
 
-    // Resolve the amount and reference from the source
     let amount = 0;
     let reference = "";
     let description = "Fine Breeze Payment";
@@ -60,7 +68,7 @@ export const POST = withAuth(
       if (order.paymentStatus === "COMPLETED") {
         return NextResponse.json({ success: false, error: "Order already paid" }, { status: 400 });
       }
-      amount = Math.ceil(order.totalAmount / 100); // cents → KES
+      amount = Math.ceil(order.totalAmount / 100);
       reference = order.orderNumber;
       description = "Food Order";
     }
@@ -91,14 +99,92 @@ export const POST = withAuth(
       description = "Event Ticket";
     }
 
-    // Initiate STK Push
+    const existingPayment = await prisma.payment.findFirst({
+      where: {
+        OR: [
+          ...(orderId ? [{ orderId }] : []),
+          ...(bookingId ? [{ bookingId }] : []),
+          ...(ticketId ? [{ ticketId }] : []),
+        ],
+      },
+    });
+
+    if (existingPayment?.status === "PENDING") {
+      return NextResponse.json({
+        success: true,
+        data: {
+          checkoutRequestId: existingPayment.checkoutRequestId,
+          message: "Payment request is already pending",
+        },
+      });
+    }
+
+    async function createPendingPayment(checkoutRequestId: string, merchantRequestId: string) {
+      if (existingPayment) {
+        return prisma.payment.update({
+          where: { id: existingPayment.id },
+          data: {
+            checkoutRequestId,
+            merchantRequestId,
+            amount: amount * 100,
+            phoneNumber,
+            status: "PENDING",
+            resultCode: null,
+            resultDesc: null,
+          },
+        });
+      }
+
+      return prisma.payment.create({
+        data: {
+          checkoutRequestId,
+          merchantRequestId,
+          amount: amount * 100,
+          phoneNumber,
+          status: "PENDING",
+          orderId: orderId ?? null,
+          bookingId: bookingId ?? null,
+          ticketId: ticketId ?? null,
+        },
+      });
+    }
+
+    if (!hasMpesaConfig()) {
+      const checkoutRequestId = `DEMO-${Date.now()}`;
+      await createPendingPayment(checkoutRequestId, `DEMO-MERCHANT-${Date.now()}`);
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          checkoutRequestId,
+          demoMode: true,
+          message: "Demo payment recorded. Configure M-Pesa credentials to send live prompts.",
+        },
+      });
+    }
+
     let stkResult: Awaited<ReturnType<typeof initiateStkPush>>;
     try {
       stkResult = await initiateStkPush({ phoneNumber, amount, reference, description });
-    } catch (err: any) {
-      console.error("[MPesa STK]", err?.message);
+    } catch (error) {
+      console.error("[MPesa STK]", error);
+
+      if (process.env.NODE_ENV !== "production") {
+        const checkoutRequestId = `DEMO-${Date.now()}`;
+        await createPendingPayment(checkoutRequestId, `DEMO-MERCHANT-${Date.now()}`);
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            checkoutRequestId,
+            demoMode: true,
+            message: "Demo payment recorded because live M-Pesa is unavailable locally.",
+          },
+        });
+      }
+
       return NextResponse.json(
-        { success: false, error: "Payment initiation failed — try again" },
+        { success: false, error: "Payment initiation failed. Please try again." },
         { status: 502 }
       );
     }
@@ -110,25 +196,13 @@ export const POST = withAuth(
       );
     }
 
-    // Persist pending payment record
-    await prisma.payment.create({
-      data: {
-        checkoutRequestId: stkResult.CheckoutRequestID,
-        merchantRequestId: stkResult.MerchantRequestID,
-        amount: amount * 100, // back to cents
-        phoneNumber,
-        status: "PENDING",
-        orderId: orderId ?? null,
-        bookingId: bookingId ?? null,
-        ticketId: ticketId ?? null,
-      },
-    });
+    await createPendingPayment(stkResult.CheckoutRequestID, stkResult.MerchantRequestID);
 
     return NextResponse.json({
       success: true,
       data: {
         checkoutRequestId: stkResult.CheckoutRequestID,
-        message: "STK Push sent — check your phone to confirm payment",
+        message: "STK Push sent. Check your phone to confirm payment.",
       },
     });
   },

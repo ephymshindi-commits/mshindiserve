@@ -1,13 +1,17 @@
+import Image from "next/image";
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
-import { MenuCard } from "@/components/public/MenuCard";
+import { ArrowRight, BedDouble, CalendarDays, MapPin, ShieldCheck, ShoppingBag } from "lucide-react";
 import { EventCard } from "@/components/public/EventCard";
+import { MenuCard } from "@/components/public/MenuCard";
+import { demoMenuItems, eventSeedData, getDemoEvents, menuSeedData } from "@/lib/fallback-data";
+import { prisma } from "@/lib/prisma";
+import type { Event, MenuItem } from "@/types";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
-async function getFeaturedData() {
+async function getFeaturedData(): Promise<{ menuItems: MenuItem[]; events: Event[] }> {
   try {
-    const [menuItems, events] = await Promise.all([
+    let [menuItems, events] = await Promise.all([
       prisma.menuItem.findMany({
         where: { isFeatured: true, isAvailable: true },
         take: 4,
@@ -20,10 +24,31 @@ async function getFeaturedData() {
       }),
     ]);
 
-    return { menuItems, events };
+    if (menuItems.length === 0) {
+      await prisma.menuItem.createMany({ data: menuSeedData(), skipDuplicates: true });
+      menuItems = await prisma.menuItem.findMany({
+        where: { isFeatured: true, isAvailable: true },
+        take: 4,
+        orderBy: { sortOrder: "asc" },
+      });
+    }
+
+    if (events.length === 0) {
+      await prisma.event.createMany({ data: eventSeedData(), skipDuplicates: true });
+      events = await prisma.event.findMany({
+        where: { isActive: true, date: { gte: new Date() } },
+        take: 3,
+        orderBy: { date: "asc" },
+      });
+    }
+
+    return {
+      menuItems: JSON.parse(JSON.stringify(menuItems.length > 0 ? menuItems : demoMenuItems.slice(0, 4))),
+      events: JSON.parse(JSON.stringify(events.length > 0 ? events : getDemoEvents())),
+    };
   } catch (error) {
-    console.error("Database error:", error);
-    return { menuItems: [], events: [] };
+    console.error("[Home Page]", error);
+    return { menuItems: demoMenuItems.slice(0, 4), events: getDemoEvents() };
   }
 }
 
@@ -31,159 +56,162 @@ export default async function HomePage() {
   const { menuItems, events } = await getFeaturedData();
 
   return (
-    <div>
-      {/* HERO */}
-      <section className="relative bg-zinc-950 overflow-hidden">
-        <div className="absolute inset-0 bg-[url('/hero-pattern.svg')] opacity-5" />
-        <div className="relative max-w-5xl mx-auto px-4 py-20 text-center">
-          <span className="inline-block text-amber-500 text-xs font-medium tracking-[3px] uppercase mb-4">
-            Fine Breeze Bar & Grill · Westlands, Nairobi
-          </span>
+    <div className="bg-stone-50 dark:bg-zinc-950">
+      <section className="relative overflow-hidden bg-zinc-950">
+        <div className="absolute inset-0">
+          <Image
+            src="https://images.unsplash.com/photo-1552566626-52f8b828add9?auto=format&fit=crop&w=1800&q=80"
+            alt="Fine dining table at Fine Breeze"
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover opacity-45"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-zinc-950 via-zinc-950/85 to-zinc-950/35" />
+        </div>
 
-          <h1 className="text-4xl md:text-6xl font-semibold text-white leading-tight mb-6">
-            Where every meal
-            <br />
-            <em className="text-amber-500 not-italic">
-              becomes a memory
-            </em>
-          </h1>
+        <div className="relative mx-auto grid min-h-[620px] max-w-6xl gap-10 px-4 py-14 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+          <div>
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-amber-200 backdrop-blur">
+              <MapPin size={13} />
+              Fine Breeze Bar & Grill, Westlands
+            </div>
+            <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-white md:text-6xl">
+              Dining, rooms, and events in one polished guest platform.
+            </h1>
+            <p className="mt-5 max-w-2xl text-base leading-8 text-zinc-300 md:text-lg">
+              MshindiServe lets guests order food, reserve rooms, buy event tickets, and pay
+              securely with M-Pesa from a single premium hospitality experience.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                href="/menu"
+                className="inline-flex h-11 items-center gap-2 rounded-lg bg-amber-600 px-5 text-sm font-medium text-white transition hover:bg-amber-500"
+              >
+                Order food <ShoppingBag size={16} />
+              </Link>
+              <Link
+                href="/rooms"
+                className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/20 px-5 text-sm font-medium text-white transition hover:bg-white/10"
+              >
+                Book a room <BedDouble size={16} />
+              </Link>
+              <Link
+                href="/events"
+                className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/20 px-5 text-sm font-medium text-white transition hover:bg-white/10"
+              >
+                Buy tickets <CalendarDays size={16} />
+              </Link>
+            </div>
+          </div>
 
-          <p className="text-zinc-400 text-lg max-w-xl mx-auto mb-10 leading-relaxed">
-            Award-winning cuisine, curated cocktails, and warm Kenyan hospitality.
-          </p>
-
-          <div className="flex gap-4 justify-center flex-wrap">
-            <Link
-              href="/menu"
-              className="px-8 py-3 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-xl"
-            >
-              Order Now
-            </Link>
-
-            <Link
-              href="/rooms"
-              className="px-8 py-3 border border-zinc-600 text-zinc-300 hover:text-white rounded-xl"
-            >
-              Book a Room
-            </Link>
+          <div className="rounded-lg border border-white/15 bg-white/10 p-4 backdrop-blur-md">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ["Live menu", `${menuItems.length}+ picks`],
+                ["Room booking", "Conflict-safe"],
+                ["Event tickets", "Seat tracking"],
+                ["Admin", "Live dashboard"],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-lg bg-white/10 p-4">
+                  <p className="text-lg font-semibold text-white">{value}</p>
+                  <p className="mt-1 text-xs text-zinc-300">{label}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 rounded-lg bg-emerald-500/10 p-4 text-sm leading-6 text-emerald-100">
+              <ShieldCheck size={18} className="mb-2" />
+              Auth-gated checkout, server-side booking validation, ticket inventory tracking,
+              and admin visibility are ready for a business demo.
+            </div>
           </div>
         </div>
       </section>
 
-      {/* STATS */}
-      <section className="grid grid-cols-2 md:grid-cols-4 bg-white dark:bg-zinc-900 border-b">
-        {[
-          { num: "12+", label: "Years serving Nairobi" },
-          { num: "4.8★", label: "Google rating" },
-          { num: "50+", label: "Menu items" },
-          { num: "24", label: "Rooms available" },
-        ].map((s, i) => (
-          <div key={i} className="py-6 text-center border-r last:border-r-0">
-            <div className="text-2xl font-semibold text-amber-600">
-              {s.num}
+      <section className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="mx-auto grid max-w-6xl grid-cols-2 gap-px px-4 py-6 md:grid-cols-4">
+          {[
+            ["12+", "Years serving Nairobi"],
+            ["4.8", "Guest rating"],
+            ["M-Pesa", "Checkout ready"],
+            ["24/7", "Online reservations"],
+          ].map(([value, label]) => (
+            <div key={label} className="p-4 text-center">
+              <p className="text-2xl font-semibold text-zinc-950 dark:text-white">{value}</p>
+              <p className="mt-1 text-xs text-zinc-500">{label}</p>
             </div>
-            <div className="text-xs text-zinc-500">{s.label}</div>
-          </div>
-        ))}
+          ))}
+        </div>
       </section>
 
-      {/* FEATURED MENU */}
-      <section className="max-w-5xl mx-auto px-4 py-12">
-        <div className="flex justify-between mb-6">
-          <h2 className="text-xl font-semibold">Popular dishes</h2>
-
-          <Link href="/menu" className="text-amber-600 text-sm">
-            Full menu →
+      <section className="mx-auto max-w-6xl px-4 py-12">
+        <div className="mb-6 flex items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700 dark:text-amber-400">
+              Popular dishes
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-white">
+              Menu favorites
+            </h2>
+          </div>
+          <Link href="/menu" className="inline-flex items-center gap-1 text-sm font-medium text-amber-700 dark:text-amber-400">
+            Full menu <ArrowRight size={15} />
           </Link>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {menuItems.map((item) => (
             <MenuCard key={item.id} item={item} />
           ))}
         </div>
       </section>
 
-      {/* EVENTS */}
-      {events.length > 0 && (
-        <section className="bg-zinc-50 py-12">
-          <div className="max-w-5xl mx-auto px-4">
-            <div className="flex justify-between mb-6">
-              <h2 className="text-xl font-semibold">
+      <section className="bg-white py-12 dark:bg-zinc-900/40">
+        <div className="mx-auto max-w-6xl px-4">
+          <div className="mb-6 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700 dark:text-amber-400">
                 Upcoming events
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold text-zinc-950 dark:text-white">
+                Nights worth booking
               </h2>
-
-              <Link href="/events" className="text-amber-600 text-sm">
-                All events →
-              </Link>
             </div>
-
-            <div className="space-y-3">
-              {events.map((event) => (
-                <EventCard key={event.id} event={event} />
-              ))}
-            </div>
+            <Link href="/events" className="inline-flex items-center gap-1 text-sm font-medium text-amber-700 dark:text-amber-400">
+              All events <ArrowRight size={15} />
+            </Link>
           </div>
-        </section>
-      )}
 
-      {/* TESTIMONIALS */}
-      <section className="max-w-5xl mx-auto px-4 py-12">
-        <h2 className="text-xl font-semibold mb-6">
-          What our guests say
-        </h2>
+          <div className="space-y-5">
+            {events.map((event) => (
+              <EventCard key={event.id} event={event} />
+            ))}
+          </div>
+        </div>
+      </section>
 
-        <div className="grid md:grid-cols-3 gap-4">
+      <section className="mx-auto max-w-6xl px-4 py-12">
+        <div className="grid gap-4 md:grid-cols-3">
           {[
-            {
-              text: "The food is amazing 🔥",
-              name: "James Njenga",
-              init: "JN",
-              rating: 5,
-            },
-            {
-              text: "Best rooms in Nairobi 💯",
-              name: "Amina Wanjiku",
-              init: "AW",
-              rating: 5,
-            },
-            {
-              text: "Great vibes every weekend 🎶",
-              name: "David Mutua",
-              init: "DM",
-              rating: 4,
-            },
-          ].map((t, i) => (
-            <div key={i} className="border rounded-2xl p-5">
-              <div className="text-amber-500 mb-3">
-                {"★".repeat(t.rating)}
-                {"☆".repeat(5 - t.rating)}
-              </div>
-
-              <p className="text-sm mb-4">"{t.text}"</p>
-
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-amber-600 text-white flex items-center justify-center text-xs">
-                  {t.init}
-                </div>
-                <span className="text-sm font-medium">
-                  {t.name}
-                </span>
-              </div>
+            ["James Njenga", "The ordering flow feels fast, and the grill platter always lands hot."],
+            ["Amina Wanjiku", "Room booking is clear, quick, and easy to pay for."],
+            ["David Mutua", "The event tickets and M-Pesa checkout make weekend plans simple."],
+          ].map(([name, text]) => (
+            <div key={name} className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="mb-3 text-sm font-semibold text-amber-600">★★★★★</div>
+              <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">"{text}"</p>
+              <p className="mt-4 text-sm font-medium text-zinc-950 dark:text-white">{name}</p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* FOOTER */}
-      <section className="bg-zinc-950 text-center py-14">
-        <h2 className="text-2xl text-white mb-2">
-          Westlands, Nairobi · Kenya
-        </h2>
-        <p className="text-zinc-500 text-sm">
-          Mon–Sun · 11AM – 2AM | +254 700 123 456
+      <footer className="bg-zinc-950 py-12 text-center">
+        <h2 className="text-xl font-semibold text-white">Fine Breeze Bar & Grill</h2>
+        <p className="mt-2 text-sm text-zinc-500">
+          Westlands, Nairobi - Open daily 11AM to 2AM - +254 700 123 456
         </p>
-      </section>
+      </footer>
     </div>
   );
 }

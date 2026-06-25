@@ -55,7 +55,16 @@ export function withAuth(handler: Handler, requiredRoles?: Role[]) {
     }
 
     (req as AuthenticatedRequest).user = payload;
-    return handler(req as AuthenticatedRequest, ctx);
+
+    try {
+      return await handler(req as AuthenticatedRequest, ctx);
+    } catch (error) {
+      console.error(`[API] ${req.method} ${req.nextUrl.pathname}`, error);
+      return NextResponse.json(
+        { success: false, error: "Something went wrong. Please try again." },
+        { status: 500 }
+      );
+    }
   };
 }
 

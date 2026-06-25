@@ -3,43 +3,70 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { withAuth, rateLimit, logActivity } from "@/lib/middleware";
 import type { AuthenticatedRequest } from "@/lib/middleware";
+import { demoMenuItems, menuSeedData } from "@/lib/fallback-data";
 
 const limiter = rateLimit(60_000, 60);
 
-// ─── GET /api/menu ────────────────────────────────────────────────────────────
-// Public — no auth required
+const categories = ["GRILL", "DRINKS", "SPECIALS", "SEAFOOD", "STARTERS", "DESSERTS"] as const;
+
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const limited = limiter(req);
   if (limited) return limited;
 
   const { searchParams } = req.nextUrl;
-  const category = searchParams.get("category");
+  const category = searchParams.get("category")?.toUpperCase();
   const featured = searchParams.get("featured");
   const available = searchParams.get("available");
 
-  const items = await prisma.menuItem.findMany({
-    where: {
-      ...(category ? { category: category.toUpperCase() as any } : {}),
+  try {
+    if (category && !categories.includes(category as (typeof categories)[number])) {
+      return NextResponse.json({ success: false, error: "Unknown menu category" }, { status: 422 });
+    }
+
+    const where = {
+      ...(category ? { category: category as (typeof categories)[number] } : {}),
       ...(featured === "true" ? { isFeatured: true } : {}),
       ...(available !== "false" ? { isAvailable: true } : {}),
-    },
-    orderBy: [{ sortOrder: "asc" }, { category: "asc" }, { name: "asc" }],
-  });
+    };
 
-  return NextResponse.json({ success: true, data: items });
+    let items = await prisma.menuItem.findMany({
+      where,
+      orderBy: [{ sortOrder: "asc" }, { category: "asc" }, { name: "asc" }],
+    });
+
+    if (items.length === 0 && !category && featured !== "true") {
+      await prisma.menuItem.createMany({ data: menuSeedData(), skipDuplicates: true });
+      items = await prisma.menuItem.findMany({
+        where,
+        orderBy: [{ sortOrder: "asc" }, { category: "asc" }, { name: "asc" }],
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: items.length > 0 ? items : demoMenuItems,
+    });
+  } catch (error) {
+    console.error("[Menu GET]", error);
+    const fallback = demoMenuItems.filter((item) => {
+      if (category && item.category !== category) return false;
+      if (featured === "true" && !item.isFeatured) return false;
+      if (available !== "false" && !item.isAvailable) return false;
+      return true;
+    });
+    return NextResponse.json({ success: true, data: fallback, fallback: true });
+  }
 }
-
-// ─── POST /api/menu ───────────────────────────────────────────────────────────
-// Admin only
 
 const createMenuSchema = z.object({
   name: z.string().min(2).max(80),
   description: z.string().min(5).max(300),
-  price: z.number().int().positive(), // in KES cents
-  category: z.enum(["GRILL", "DRINKS", "SPECIALS", "SEAFOOD", "STARTERS", "DESSERTS"]),
-  imageUrl: z.string().url().optional(),
-  emoji: z.string().max(4).default("🍽️"),
+  price: z.number().int().positive(),
+  category: z.enum(categories),
+  imageUrl: z.string().url().optional().nullable(),
+  emoji: z.string().max(8).default("FB"),
   isAvailable: z.boolean().default(true),
   isFeatured: z.boolean().default(false),
   sortOrder: z.number().int().default(0),
@@ -47,6 +74,9 @@ const createMenuSchema = z.object({
 
 export const POST = withAuth(
   async (req: AuthenticatedRequest) => {
+    const limited = limiter(req);
+    if (limited) return limited;
+
     let body: unknown;
     try {
       body = await req.json();

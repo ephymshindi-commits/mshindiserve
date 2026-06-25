@@ -1,51 +1,76 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { CheckCircle, Clock, Flame, Loader2, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Flame, CheckCircle, Clock, RefreshCw } from "lucide-react";
-import { useAuthStore } from "@/store/authStore";
-import { ordersApi } from "@/lib/api";
-import { formatKES, orderStatusColor, capitalize, timeAgo } from "@/lib/utils";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
+import { authApi, ordersApi } from "@/lib/api";
+import { capitalize, orderStatusColor, timeAgo } from "@/lib/utils";
+import { useAuthStore } from "@/store/authStore";
 
 interface Order {
   id: string;
   orderNumber: string;
   status: string;
-  totalAmount: number;
-  tableNumber?: string;
+  tableNumber?: string | null;
   createdAt: string;
-  user: { name: string; phone?: string };
+  user: { name: string; phone?: string | null };
   orderItems: Array<{
     quantity: number;
-    notes?: string;
-    menuItem: { name: string; emoji: string };
+    notes?: string | null;
+    menuItem: { name: string };
   }>;
 }
 
 const TRACK_STEPS = ["PENDING", "CONFIRMED", "PREPARING", "READY", "DELIVERED"];
 
 export default function KitchenPage() {
-  const { user, isAuthenticated } = useAuthStore();
+  const { user, isAuthenticated, setUser } = useAuthStore();
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isAuthenticated || !["KITCHEN", "ADMIN"].includes(user?.role ?? "")) {
-      router.replace("/");
-      return;
+    let cancelled = false;
+
+    async function verifyStaff() {
+      try {
+        let role = user?.role;
+        if (!isAuthenticated || !user) {
+          const res = await authApi.me();
+          const sessionUser = res.data.data.user;
+          if (cancelled) return;
+          setUser(sessionUser);
+          role = sessionUser.role;
+        }
+
+        if (!["KITCHEN", "ADMIN"].includes(role ?? "")) {
+          router.replace("/");
+          return;
+        }
+
+        setChecking(false);
+        await fetchOrders();
+      } catch {
+        if (!cancelled) router.replace("/login?next=/staff/kitchen");
+      }
     }
-    fetchOrders();
-    const interval = setInterval(fetchOrders, 15000); // poll every 15s
-    return () => clearInterval(interval);
-  }, [isAuthenticated, user]);
+
+    verifyStaff();
+    const interval = window.setInterval(fetchOrders, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [isAuthenticated, router, setUser, user]);
 
   async function fetchOrders() {
     try {
       const res = await ordersApi.getAll({ status: "PENDING,CONFIRMED,PREPARING,READY" });
-      setOrders(res.data.data);
+      setOrders(res.data.data ?? []);
     } catch {
       toast.error("Failed to load orders");
     } finally {
@@ -58,168 +83,172 @@ export default function KitchenPage() {
     try {
       await ordersApi.updateStatus(orderId, status);
       await fetchOrders();
-      toast.success(`Order → ${capitalize(status)}`);
-    } catch {
-      toast.error("Update failed");
+      toast.success(`Order moved to ${capitalize(status)}`);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error ?? "Update failed");
     } finally {
       setUpdating(null);
     }
   }
 
-  const pending = orders.filter((o) => o.status === "PENDING");
-  const active = orders.filter((o) => ["CONFIRMED", "PREPARING"].includes(o.status));
-  const ready = orders.filter((o) => o.status === "READY");
+  const pending = orders.filter((order) => order.status === "PENDING");
+  const active = orders.filter((order) => ["CONFIRMED", "PREPARING"].includes(order.status));
+  const ready = orders.filter((order) => order.status === "READY");
+
+  if (checking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-400">
+        <Loader2 size={22} className="animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-zinc-950">
-      {/* Header */}
-      <header className="bg-zinc-900 border-b border-zinc-800 px-5 py-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-amber-500 font-semibold">Kitchen Panel</h1>
-          <p className="text-zinc-600 text-xs">{user?.name} · Kitchen Staff</p>
+    <div className="min-h-screen bg-zinc-950 text-white">
+      <header className="border-b border-zinc-800 bg-zinc-900 px-5 py-4">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
+          <div>
+            <h1 className="font-semibold text-amber-400">Kitchen Panel</h1>
+            <p className="mt-1 text-xs text-zinc-500">{user?.name ?? "Kitchen staff"}</p>
+          </div>
+          <button
+            onClick={fetchOrders}
+            className="inline-flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-xs font-medium text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            Refresh
+          </button>
         </div>
-        <button
-          onClick={fetchOrders}
-          className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-        >
-          <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
-          Refresh
-        </button>
       </header>
 
-      <div className="p-4 space-y-4 max-w-2xl mx-auto">
-        {/* Summary pills */}
-        <div className="flex gap-3">
+      <main className="mx-auto max-w-4xl space-y-4 p-4">
+        <div className="grid grid-cols-3 gap-3">
           {[
-            { label: "New", count: pending.length, color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
-            { label: "Cooking", count: active.length, color: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
-            { label: "Ready", count: ready.length, color: "bg-green-500/20 text-green-400 border-green-500/30" },
-          ].map((s) => (
-            <div key={s.label} className={`flex-1 text-center px-3 py-2 rounded-xl border ${s.color}`}>
-              <div className="text-xl font-semibold">{s.count}</div>
-              <div className="text-xs mt-0.5">{s.label}</div>
+            { label: "New", count: pending.length, color: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300" },
+            { label: "Cooking", count: active.length, color: "border-orange-500/30 bg-orange-500/10 text-orange-300" },
+            { label: "Ready", count: ready.length, color: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" },
+          ].map((item) => (
+            <div key={item.label} className={`rounded-lg border p-3 text-center ${item.color}`}>
+              <p className="text-2xl font-semibold">{item.count}</p>
+              <p className="mt-1 text-xs">{item.label}</p>
             </div>
           ))}
         </div>
 
-        {/* Order cards */}
         {loading ? (
-          <div className="text-center py-10 text-zinc-600 text-sm">Loading orders…</div>
+          <div className="flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 p-10">
+            <Loader2 size={22} className="animate-spin text-amber-400" />
+          </div>
         ) : orders.length === 0 ? (
-          <div className="text-center py-16 text-zinc-600">
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-12 text-center text-zinc-500">
             <CheckCircle size={32} className="mx-auto mb-3 text-zinc-700" />
-            <p className="text-sm">All caught up — no pending orders</p>
+            <p className="text-sm">All caught up. No active orders right now.</p>
           </div>
         ) : (
           <div className="space-y-3">
             {orders.map((order) => (
-              <div
+              <article
                 key={order.id}
-                className={`bg-zinc-900 border rounded-2xl p-4 ${
+                className={`rounded-lg border bg-zinc-900 p-4 ${
                   order.status === "PENDING"
                     ? "border-yellow-500/40"
                     : order.status === "READY"
-                    ? "border-green-500/40"
+                    ? "border-emerald-500/40"
                     : "border-zinc-800"
                 }`}
               >
-                {/* Order header */}
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-white font-semibold text-sm">{order.orderNumber}</span>
-                    {order.tableNumber && (
-                      <span className="text-xs bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">
-                        Table {order.tableNumber}
-                      </span>
-                    )}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm font-semibold">{order.orderNumber}</span>
+                      {order.tableNumber && (
+                        <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+                          Table {order.tableNumber}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-zinc-500">{order.user.name}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${orderStatusColor(order.status)}`}>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${orderStatusColor(order.status)}`}>
                       {capitalize(order.status)}
                     </span>
-                    <span className="text-zinc-600 text-xs flex items-center gap-1">
-                      <Clock size={10} /> {timeAgo(order.createdAt)}
+                    <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
+                      <Clock size={12} /> {timeAgo(order.createdAt)}
                     </span>
                   </div>
                 </div>
 
-                {/* Items */}
-                <div className="space-y-1.5 mb-4">
-                  {order.orderItems.map((item, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <span className="text-lg">{item.menuItem.emoji}</span>
-                      <div>
-                        <span className="text-sm text-zinc-200">
-                          ×{item.quantity} {item.menuItem.name}
-                        </span>
-                        {item.notes && (
-                          <p className="text-xs text-amber-400 mt-0.5">Note: {item.notes}</p>
-                        )}
-                      </div>
+                <div className="mt-4 space-y-2">
+                  {order.orderItems.map((item, index) => (
+                    <div key={`${order.id}-${index}`} className="rounded-lg bg-zinc-950 p-3">
+                      <p className="text-sm text-zinc-100">
+                        {item.quantity} x {item.menuItem.name}
+                      </p>
+                      {item.notes && <p className="mt-1 text-xs text-amber-300">Note: {item.notes}</p>}
                     </div>
                   ))}
                 </div>
 
-                {/* Tracking bar */}
-                <div className="flex gap-1 mb-4">
-                  {TRACK_STEPS.slice(0, 4).map((step, i) => {
-                    const stepIndex = TRACK_STEPS.indexOf(order.status);
-                    const done = i <= stepIndex;
+                <div className="mt-4 flex gap-1">
+                  {TRACK_STEPS.slice(0, 4).map((step, index) => {
+                    const currentIndex = TRACK_STEPS.indexOf(order.status);
                     return (
                       <div
                         key={step}
-                        className={`flex-1 h-1 rounded-full transition-colors ${
-                          done ? "bg-amber-500" : "bg-zinc-800"
-                        }`}
+                        className={`h-1 flex-1 rounded-full ${index <= currentIndex ? "bg-amber-500" : "bg-zinc-800"}`}
                       />
                     );
                   })}
                 </div>
 
-                {/* Actions */}
-                <div className="flex gap-2">
+                <div className="mt-4">
                   {order.status === "PENDING" && (
-                    <button
-                      onClick={() => updateStatus(order.id, "CONFIRMED")}
-                      disabled={updating === order.id}
-                      className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-xl disabled:opacity-50"
-                    >
+                    <ActionButton onClick={() => updateStatus(order.id, "CONFIRMED")} busy={updating === order.id}>
                       Accept order
-                    </button>
+                    </ActionButton>
                   )}
                   {order.status === "CONFIRMED" && (
-                    <button
-                      onClick={() => updateStatus(order.id, "PREPARING")}
-                      disabled={updating === order.id}
-                      className="flex-1 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50"
-                    >
-                      <Flame size={13} /> Start cooking
-                    </button>
+                    <ActionButton onClick={() => updateStatus(order.id, "PREPARING")} busy={updating === order.id}>
+                      <Flame size={14} /> Start cooking
+                    </ActionButton>
                   )}
                   {order.status === "PREPARING" && (
-                    <button
-                      onClick={() => updateStatus(order.id, "READY")}
-                      disabled={updating === order.id}
-                      className="flex-1 py-2 bg-green-700 hover:bg-green-800 text-white text-xs font-medium rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50"
-                    >
-                      <CheckCircle size={13} /> Mark ready
-                    </button>
+                    <ActionButton onClick={() => updateStatus(order.id, "READY")} busy={updating === order.id}>
+                      <CheckCircle size={14} /> Mark ready
+                    </ActionButton>
                   )}
                   {order.status === "READY" && (
-                    <button
-                      onClick={() => updateStatus(order.id, "DELIVERED")}
-                      disabled={updating === order.id}
-                      className="flex-1 py-2 bg-zinc-700 hover:bg-zinc-600 text-white text-xs font-medium rounded-xl disabled:opacity-50"
-                    >
+                    <ActionButton onClick={() => updateStatus(order.id, "DELIVERED")} busy={updating === order.id}>
                       Mark delivered
-                    </button>
+                    </ActionButton>
                   )}
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         )}
-      </div>
+      </main>
     </div>
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  busy,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  busy: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy}
+      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-amber-600 text-sm font-medium text-white transition hover:bg-amber-500 disabled:opacity-50"
+    >
+      {busy ? <Loader2 size={15} className="animate-spin" /> : children}
+    </button>
   );
 }

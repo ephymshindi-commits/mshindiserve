@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { MessageCircle, X, Send, Loader2 } from "lucide-react";
+import { Bot, Loader2, MessageCircle, Send, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 interface Message {
@@ -9,25 +9,13 @@ interface Message {
   content: string;
 }
 
-const SYSTEM_PROMPT = `You are a friendly AI concierge for Fine Breeze Bar & Grill, a premium restaurant and hotel in Westlands, Nairobi, Kenya.
-
-The business offers:
-- FOOD & DRINKS: Nyama Choma (KES 1,200), Tilapia ya Pwani (KES 950), Chicken Tikka (KES 880), Ugali & Sukuma Wiki (KES 350), Tusker Lager (KES 350), Dawa Cocktail (KES 650), Mixed Grill Platter for 2 (KES 2,200), Pili Pili Prawns (KES 1,100), Vegetable Pilau (KES 420), Samosa Platter 6pc (KES 450)
-- ROOMS: Standard (KES 4,500/night), Deluxe Garden View (KES 6,800/night), Executive Suite (KES 12,500/night), Family Room (KES 8,200/night), Budget Single (KES 2,800/night). All include breakfast and WiFi.
-- EVENTS: Jazz & Nyama Night, Trivia Fridays, Beer Festival, Stand-Up Comedy Nights — check the Events page for current listings.
-- PAYMENTS: M-Pesa accepted for all orders, bookings, and tickets.
-- HOURS: Monday–Sunday, 11:00 AM – 2:00 AM. Kitchen closes at midnight.
-- LOCATION: Westlands, Nairobi, near Sarit Centre. Ample parking available.
-- CONTACT: +254 700 123 456
-
-Be warm, concise, and helpful. Answer in 2-3 sentences max unless a list is needed. Use light Swahili phrases occasionally (asante, karibu, etc.) to add authenticity. If someone wants to order or book, encourage them to use the website's menu/rooms/events pages.`;
-
 export function AIConcierge() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "Karibu! 👋 I'm your Fine Breeze concierge. Ask me about our menu, rooms, events, or anything else — I'm here to help!",
+      content:
+        "Karibu. I can help with menu highlights, room options, event tickets, and M-Pesa checkout questions.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -40,7 +28,7 @@ export function AIConcierge() {
   }, [messages]);
 
   useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 100);
+    if (open) window.setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
 
   async function sendMessage() {
@@ -57,17 +45,19 @@ export function AIConcierge() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: [...messages, userMsg].map((m) => ({
-            role: m.role,
-            content: m.content,
+          messages: [...messages, userMsg].map((message) => ({
+            role: message.role,
+            content: message.content,
           })),
         }),
       });
 
-      if (!res.ok) throw new Error("API error");
+      if (!res.ok) throw new Error("Concierge request failed");
 
       const data = await res.json();
-      const reply = data.content?.[0]?.text ?? "Sorry, I couldn't get a response. Please try again.";
+      const reply =
+        data.content?.[0]?.text ??
+        "I can help with dining, rooms, events, or payments. What would you like to do?";
 
       setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
     } catch {
@@ -75,7 +65,8 @@ export function AIConcierge() {
         ...prev,
         {
           role: "assistant",
-          content: "Samahani! I'm having trouble connecting right now. Please call us at +254 700 123 456 or try again shortly.",
+          content:
+            "I am having trouble connecting right now. You can still order, book rooms, or buy tickets from the main pages.",
         },
       ]);
     } finally {
@@ -85,82 +76,78 @@ export function AIConcierge() {
 
   return (
     <>
-      {/* Chat window */}
       {open && (
-        <div className="fixed bottom-20 left-4 z-50 w-80 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center gap-3 px-4 py-3 bg-zinc-950 border-b border-zinc-800">
-            <div className="w-8 h-8 rounded-full bg-amber-600 flex items-center justify-center text-sm">🤖</div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-white">AI Concierge</p>
-              <p className="text-xs text-zinc-500 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-                Online now
-              </p>
+        <section className="fixed bottom-20 left-4 z-50 flex max-h-[70vh] w-[calc(100vw-2rem)] max-w-sm flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+          <header className="flex items-center gap-3 border-b border-zinc-200 bg-zinc-950 px-4 py-3 dark:border-zinc-800">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-600 text-white">
+              <Bot size={17} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-white">Fine Breeze Concierge</p>
+              <p className="text-xs text-zinc-400">Online assistant</p>
             </div>
             <button
               onClick={() => setOpen(false)}
-              className="text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-white/10 hover:text-white"
+              aria-label="Close concierge"
             >
-              <X size={16} />
+              <X size={17} />
             </button>
-          </div>
+          </header>
 
-          {/* Messages */}
-          <div className="flex-1 max-h-64 overflow-y-auto px-4 py-3 space-y-3">
-            {messages.map((msg, i) => (
+          <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+            {messages.map((message, index) => (
               <div
-                key={i}
-                className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}
+                key={`${message.role}-${index}`}
+                className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}
               >
                 <div
                   className={cn(
-                    "max-w-[85%] px-3 py-2 rounded-2xl text-sm leading-relaxed",
-                    msg.role === "user"
-                      ? "bg-amber-600 text-white rounded-br-sm"
-                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 rounded-bl-sm"
+                    "max-w-[85%] rounded-lg px-3 py-2 text-sm leading-6",
+                    message.role === "user"
+                      ? "bg-amber-600 text-white"
+                      : "bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100"
                   )}
                 >
-                  {msg.content}
+                  {message.content}
                 </div>
               </div>
             ))}
             {loading && (
               <div className="flex justify-start">
-                <div className="bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-2xl rounded-bl-sm">
-                  <Loader2 size={14} className="animate-spin text-zinc-400" />
+                <div className="rounded-lg bg-zinc-100 px-3 py-2 dark:bg-zinc-800">
+                  <Loader2 size={15} className="animate-spin text-zinc-500" />
                 </div>
               </div>
             )}
             <div ref={bottomRef} />
           </div>
 
-          {/* Input */}
-          <div className="flex gap-2 px-3 py-3 border-t border-zinc-100 dark:border-zinc-800">
+          <div className="flex gap-2 border-t border-zinc-200 px-3 py-3 dark:border-zinc-800">
             <input
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              placeholder="Ask about menu, rooms…"
-              className="flex-1 text-sm px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              placeholder="Ask about menu, rooms, events..."
+              className="h-10 min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:ring-2 focus:ring-amber-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
             />
             <button
               onClick={sendMessage}
               disabled={!input.trim() || loading}
-              className="w-9 h-9 flex items-center justify-center rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white transition-colors"
+              className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-950 text-white transition hover:bg-amber-700 disabled:opacity-40 dark:bg-amber-600 dark:hover:bg-amber-500"
+              aria-label="Send message"
             >
-              <Send size={14} />
+              <Send size={16} />
             </button>
           </div>
-        </div>
+        </section>
       )}
 
-      {/* FAB */}
       <button
-        onClick={() => setOpen(!open)}
-        className="fixed bottom-6 left-6 z-50 w-12 h-12 bg-zinc-950 hover:bg-zinc-800 border border-amber-600/50 text-amber-500 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-105 active:scale-95"
-        aria-label="AI Concierge"
+        onClick={() => setOpen((value) => !value)}
+        className="fixed bottom-6 left-6 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-950 shadow-lg transition hover:-translate-y-0.5 hover:border-amber-300 hover:text-amber-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-white dark:hover:text-amber-300"
+        aria-label="Open concierge"
       >
         {open ? <X size={20} /> : <MessageCircle size={20} />}
       </button>

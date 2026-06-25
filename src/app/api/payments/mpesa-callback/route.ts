@@ -93,14 +93,6 @@ export async function POST(req: NextRequest) {
             status: "ACTIVE",
           },
         });
-        // Update event soldSeats
-        const ticket = await tx.ticket.findUnique({ where: { id: payment.ticketId } });
-        if (ticket) {
-          await tx.event.update({
-            where: { id: ticket.eventId },
-            data: { soldSeats: { increment: ticket.quantity } },
-          });
-        }
       }
     });
 
@@ -115,6 +107,23 @@ export async function POST(req: NextRequest) {
         resultDesc: parsed.resultDesc,
       },
     });
+
+    if (payment.ticketId) {
+      await prisma.$transaction(async (tx) => {
+        const ticket = await tx.ticket.findUnique({ where: { id: payment.ticketId! } });
+        if (!ticket || ticket.paymentStatus === "FAILED") return;
+
+        await tx.ticket.update({
+          where: { id: ticket.id },
+          data: { paymentStatus: "FAILED", status: "CANCELLED" },
+        });
+
+        await tx.event.update({
+          where: { id: ticket.eventId },
+          data: { soldSeats: { decrement: ticket.quantity } },
+        });
+      });
+    }
 
     console.log(`[MPesa Callback] ❌ Payment failed: ${parsed.resultDesc}`);
   }

@@ -1,16 +1,23 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter, usePathname } from "next/navigation";
-import Link from "next/link";
 import {
-  LayoutDashboard, ShoppingBag, UtensilsCrossed,
-  BedDouble, Calendar, Users, BarChart3, LogOut, ChevronRight
+  BarChart3,
+  BedDouble,
+  Calendar,
+  ChevronRight,
+  LayoutDashboard,
+  LogOut,
+  ShoppingBag,
+  Users,
+  UtensilsCrossed,
 } from "lucide-react";
-import { useAuthStore } from "@/store/authStore";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { authApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import toast from "react-hot-toast";
+import { useAuthStore } from "@/store/authStore";
 
 const NAV = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -23,67 +30,128 @@ const NAV = [
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user, isAuthenticated, clearAuth } = useAuthStore();
+  const { user, isAuthenticated, clearAuth, setUser } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    if (!isAuthenticated || user?.role !== "ADMIN") {
-      router.replace("/");
-    }
-  }, [isAuthenticated, user, router]);
+    let cancelled = false;
 
-  if (!isAuthenticated || user?.role !== "ADMIN") return null;
+    async function verifyAdmin() {
+      if (isAuthenticated && user) {
+        if (user.role !== "ADMIN") {
+          router.replace("/");
+          return;
+        }
+        setChecking(false);
+        return;
+      }
+
+      try {
+        const res = await authApi.me();
+        const sessionUser = res.data.data.user;
+        if (cancelled) return;
+        setUser(sessionUser);
+        if (sessionUser.role !== "ADMIN") {
+          router.replace("/");
+          return;
+        }
+        setChecking(false);
+      } catch {
+        if (!cancelled) router.replace("/login?next=/admin/dashboard");
+      }
+    }
+
+    verifyAdmin();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, router, setUser, user]);
 
   async function handleLogout() {
-    await authApi.logout().catch(() => {});
+    await authApi.logout().catch(() => undefined);
     clearAuth();
     toast.success("Signed out");
     router.push("/");
   }
 
+  if (checking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-sm text-zinc-400">
+        Loading admin workspace...
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      {/* Sidebar */}
-      <aside className="w-52 flex-shrink-0 bg-zinc-950 border-r border-zinc-800 flex flex-col">
-        <div className="px-4 py-5 border-b border-zinc-800">
-          <p className="text-amber-500 font-semibold text-sm">MshindiServe</p>
-          <p className="text-zinc-600 text-xs mt-0.5">Admin Panel</p>
+    <div className="flex min-h-screen bg-stone-50 dark:bg-zinc-950">
+      <aside className="hidden w-60 shrink-0 border-r border-zinc-800 bg-zinc-950 md:flex md:flex-col">
+        <div className="border-b border-zinc-800 px-5 py-5">
+          <p className="text-sm font-semibold text-white">
+            Mshindi<span className="text-amber-500">Serve</span>
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">Admin workspace</p>
         </div>
 
-        <nav className="flex-1 py-3 space-y-0.5">
-          {NAV.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "flex items-center gap-2.5 px-4 py-2.5 text-xs transition-colors",
-                pathname === href
-                  ? "text-amber-500 bg-amber-500/10"
-                  : "text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
-              )}
-            >
-              <Icon size={15} />
-              {label}
-              {pathname === href && <ChevronRight size={12} className="ml-auto text-amber-500/50" />}
-            </Link>
-          ))}
+        <nav className="flex-1 space-y-1 px-3 py-4">
+          {NAV.map(({ href, label, icon: Icon }) => {
+            const active = pathname === href;
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
+                  active
+                    ? "bg-amber-500/10 text-amber-300"
+                    : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-100"
+                )}
+              >
+                <Icon size={16} />
+                {label}
+                {active && <ChevronRight size={14} className="ml-auto text-amber-400" />}
+              </Link>
+            );
+          })}
         </nav>
 
-        <div className="px-4 py-4 border-t border-zinc-800">
-          <p className="text-zinc-600 text-[10px] mb-1">Signed in as</p>
-          <p className="text-zinc-400 text-xs truncate mb-3">{user?.email}</p>
+        <div className="border-t border-zinc-800 px-5 py-4">
+          <p className="text-[11px] uppercase tracking-wide text-zinc-600">Signed in as</p>
+          <p className="mt-1 truncate text-xs text-zinc-300">{user?.email}</p>
           <button
             onClick={handleLogout}
-            className="flex items-center gap-2 text-xs text-red-500 hover:text-red-400 transition-colors"
+            className="mt-3 flex items-center gap-2 text-xs font-medium text-red-400 transition hover:text-red-300"
           >
-            <LogOut size={13} /> Sign out
+            <LogOut size={14} /> Sign out
           </button>
         </div>
       </aside>
 
-      {/* Main */}
-      <main className="flex-1 p-6 overflow-y-auto">{children}</main>
+      <div className="min-w-0 flex-1">
+        <header className="border-b border-zinc-200 bg-white px-4 py-3 md:hidden dark:border-zinc-800 dark:bg-zinc-950">
+          <p className="text-sm font-semibold text-zinc-950 dark:text-white">Admin workspace</p>
+          <div className="mt-3 flex gap-2 overflow-x-auto">
+            {NAV.map(({ href, label }) => (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  "shrink-0 rounded-lg px-3 py-2 text-xs font-medium",
+                  pathname === href
+                    ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+                    : "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                )}
+              >
+                {label}
+              </Link>
+            ))}
+          </div>
+        </header>
+
+        <main className="p-4 md:p-6">{children}</main>
+      </div>
     </div>
   );
 }

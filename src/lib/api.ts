@@ -84,6 +84,7 @@ export const authApi = {
     api.post("/auth/login", { email, password }),
   register: (data: { name: string; email: string; phone?: string; password: string }) =>
     api.post("/auth/register", data),
+  me: () => api.get("/auth/me"),
   logout: () => api.post("/auth/logout"),
 };
 
@@ -107,6 +108,16 @@ export const bookingsApi = {
   getAll: (params?: { status?: string }) => api.get("/bookings", { params }),
   create: (data: unknown) => api.post("/bookings", data),
   update: (id: string, data: unknown) => api.patch(`/bookings/${id}`, data),
+};
+
+export const roomsApi = {
+  getAll: (params?: { available?: boolean }) => api.get("/rooms", { params }),
+  create: (data: unknown) => api.post("/rooms", data),
+};
+
+export const eventsApi = {
+  getAll: (params?: { past?: boolean }) => api.get("/events", { params }),
+  create: (data: unknown) => api.post("/events", data),
 };
 
 export const ticketsApi = {

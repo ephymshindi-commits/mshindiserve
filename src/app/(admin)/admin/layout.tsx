@@ -10,6 +10,7 @@ import {
   ShoppingBag,
   Users,
   UtensilsCrossed,
+  Wine,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -23,6 +24,7 @@ const NAV = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/orders", label: "Orders", icon: ShoppingBag },
   { href: "/admin/menu", label: "Menu", icon: UtensilsCrossed },
+  { href: "/admin/liquor", label: "Liquor", icon: Wine },
   { href: "/admin/rooms", label: "Rooms", icon: BedDouble },
   { href: "/admin/events", label: "Events", icon: Calendar },
   { href: "/admin/users", label: "Users", icon: Users },

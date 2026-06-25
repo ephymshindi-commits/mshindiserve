@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import argon2 from "argon2";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { signAccessToken, signRefreshToken } from "@/lib/jwt";
 import { rateLimit, logActivity } from "@/lib/middleware";
 import { setAuthCookies } from "@/lib/auth-cookies";
 import { databaseErrorResponse } from "@/lib/api-errors";
+import { hashPassword } from "@/lib/passwords";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const limiter = rateLimit(60_000, 5); // 5 registrations per minute per IP
 
@@ -58,13 +61,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Hash password with Argon2id
-    const passwordHash = await argon2.hash(password, {
-      type: argon2.argon2id,
-      memoryCost: 65536,
-      timeCost: 3,
-      parallelism: 4,
-    });
+    const passwordHash = await hashPassword(password);
 
     const user = await prisma.user.create({
       data: { name, email, phone, passwordHash, role: "CUSTOMER" },

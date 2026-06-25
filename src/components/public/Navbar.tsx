@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { AuthModal } from "@/components/shared/AuthModal";
 import { authApi } from "@/lib/api";
@@ -34,6 +34,11 @@ export function Navbar() {
   const { user, isAuthenticated, clearAuth } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   if (pathname.startsWith("/admin") || pathname.startsWith("/staff")) return null;
 
@@ -43,12 +48,15 @@ export function Navbar() {
     toast.success("Signed out");
   }
 
+  const currentUser = mounted ? user : null;
+  const loggedIn = mounted && isAuthenticated && currentUser;
+
   const staffHref =
-    user?.role === "ADMIN"
+    currentUser?.role === "ADMIN"
       ? "/admin/dashboard"
-      : user?.role === "KITCHEN"
+      : currentUser?.role === "KITCHEN"
       ? "/staff/kitchen"
-      : user?.role === "RECEPTION"
+      : currentUser?.role === "RECEPTION"
       ? "/staff/reception"
       : null;
 
@@ -78,14 +86,14 @@ export function Navbar() {
           </div>
 
           <div className="hidden items-center gap-2 md:flex">
-            {isAuthenticated && user ? (
+            {loggedIn ? (
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger asChild>
                   <button className="flex h-10 items-center gap-2 rounded-lg border border-zinc-200 px-3 text-sm text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900">
                     <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-600 text-xs font-semibold text-white">
-                      {user.name.charAt(0).toUpperCase()}
+                      {currentUser.name.charAt(0).toUpperCase()}
                     </span>
-                    <span className="max-w-[120px] truncate">{user.name.split(" ")[0]}</span>
+                    <span className="max-w-[120px] truncate">{currentUser.name.split(" ")[0]}</span>
                     <ChevronDown size={14} className="text-zinc-400" />
                   </button>
                 </DropdownMenu.Trigger>
@@ -149,7 +157,7 @@ export function Navbar() {
             </div>
 
             <div className="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-              {isAuthenticated && user ? (
+              {loggedIn ? (
                 <div className="space-y-1">
                   <MenuLink href="/orders" label="My orders" onClick={() => setMenuOpen(false)} />
                   <MenuLink href="/bookings" label="My bookings" onClick={() => setMenuOpen(false)} />

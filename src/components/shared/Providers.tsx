@@ -35,7 +35,7 @@ function SessionSync() {
 
     async function loadSession() {
       try {
-        const res = await fetch("/api/auth/me", {
+        const res = await fetch("/api/auth/session", {
           credentials: "include",
           cache: "no-store",
         });

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import argon2 from "argon2";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { signAccessToken, signRefreshToken } from "@/lib/jwt";
 import { rateLimit, logActivity } from "@/lib/middleware";
 import { setAuthCookies } from "@/lib/auth-cookies";
 import { databaseErrorResponse } from "@/lib/api-errors";
+import { DUMMY_PASSWORD_HASH, hashPassword, isPasswordHash, verifyPassword } from "@/lib/passwords";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const limiter = rateLimit(60_000, 10);
 
@@ -50,12 +53,11 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const dummyHash = "$argon2id$v=19$m=65536,t=3,p=4$placeholder";
-    const canUsePassword = user?.passwordHash.startsWith("$argon2");
+    const canUsePassword = isPasswordHash(user?.passwordHash);
     const valid =
       user && canUsePassword
-        ? await argon2.verify(user.passwordHash, password).catch(() => false)
-        : await argon2.verify(dummyHash, password).catch(() => false);
+        ? await verifyPassword(password, user.passwordHash)
+        : await verifyPassword(password, DUMMY_PASSWORD_HASH);
 
     if (user && !canUsePassword) {
       return NextResponse.json(
@@ -69,6 +71,13 @@ export async function POST(req: NextRequest) {
         { success: false, error: "Invalid email or password" },
         { status: 401 }
       );
+    }
+
+    if (user.passwordHash.startsWith("$argon2")) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: await hashPassword(password) },
+      });
     }
 
     if (!user.isActive) {

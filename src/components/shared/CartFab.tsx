@@ -1,14 +1,20 @@
 "use client";
 
 import { ShoppingBag } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useCartStore } from "@/store/cartStore";
 import { formatKES } from "@/lib/utils";
 
 export function CartFab() {
   const { totalItems, totalAmount, openCart, isOpen } = useCartStore();
+  const [mounted, setMounted] = useState(false);
   const count = totalItems();
 
-  if (count === 0 || isOpen) return null;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted || count === 0 || isOpen) return null;
 
   return (
     <button

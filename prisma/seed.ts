@@ -1,5 +1,5 @@
 import { PrismaClient, MenuCategory, Role } from "@prisma/client";
-import argon2 from "argon2";
+import { hashPassword } from "../src/lib/passwords";
 
 const prisma = new PrismaClient();
 
@@ -7,13 +7,13 @@ async function main() {
   console.log("🌱 Seeding MshindiServe database...");
 
   // ── Users ────────────────────────────────────────────────────────────────
-  const adminHash = await argon2.hash("Admin@123!");
-  const staffHash = await argon2.hash("Staff@123!");
-  const userHash = await argon2.hash("User@123!");
+  const adminHash = await hashPassword("Admin@123!");
+  const staffHash = await hashPassword("Staff@123!");
+  const userHash = await hashPassword("User@123!");
 
   const admin = await prisma.user.upsert({
     where: { email: "admin@mshindiServe.ke" },
-    update: {},
+    update: { passwordHash: adminHash },
     create: {
       name: "System Admin",
       email: "admin@mshindiServe.ke",
@@ -25,7 +25,7 @@ async function main() {
 
   const kitchen = await prisma.user.upsert({
     where: { email: "kitchen@mshindiServe.ke" },
-    update: {},
+    update: { passwordHash: staffHash },
     create: {
       name: "Brian Otieno",
       email: "kitchen@mshindiServe.ke",
@@ -37,7 +37,7 @@ async function main() {
 
   const reception = await prisma.user.upsert({
     where: { email: "reception@mshindiServe.ke" },
-    update: {},
+    update: { passwordHash: staffHash },
     create: {
       name: "Salma Hassan",
       email: "reception@mshindiServe.ke",
@@ -49,7 +49,7 @@ async function main() {
 
   const customer = await prisma.user.upsert({
     where: { email: "grace@example.ke" },
-    update: {},
+    update: { passwordHash: userHash },
     create: {
       name: "Grace Njoroge",
       email: "grace@example.ke",

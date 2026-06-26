@@ -7,11 +7,13 @@ import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { AdminSectionHeader } from "@/components/admin/AdminSectionHeader";
 import { MenuItemModal } from "@/components/admin/MenuItemModal";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { formatKES } from "@/lib/utils";
 import { labelFromEnum } from "@/lib/visuals";
 import type { ApiResponse, MenuItem } from "@/types";
 
 const categories = ["ALL", "GRILL", "DRINKS", "SPECIALS", "SEAFOOD", "STARTERS", "DESSERTS"] as const;
+const ADMIN_MENU_QUERY_KEY = ["admin-menu"] as const;
 
 type CategoryFilter = (typeof categories)[number];
 type MenuDeleteResponse = ApiResponse<MenuItem> & { softDeleted?: boolean };
@@ -41,9 +43,10 @@ export default function AdminMenuPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const menuQuery = useQuery({
-    queryKey: ["admin-menu"],
+    queryKey: ADMIN_MENU_QUERY_KEY,
     queryFn: fetchMenuItems,
   });
+  useRealtimeTable("menu_items", ADMIN_MENU_QUERY_KEY);
 
   const filteredItems = useMemo(() => {
     const items = menuQuery.data ?? [];
@@ -65,7 +68,7 @@ export default function AdminMenuPage() {
       return data.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-menu"] });
+      queryClient.invalidateQueries({ queryKey: ADMIN_MENU_QUERY_KEY });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Could not update menu item.");
@@ -87,7 +90,7 @@ export default function AdminMenuPage() {
     onSuccess: (data) => {
       toast.success(data.softDeleted ? "Item has orders, so it was hidden from the public menu." : "Menu item deleted.");
       setConfirmDeleteId(null);
-      queryClient.invalidateQueries({ queryKey: ["admin-menu"] });
+      queryClient.invalidateQueries({ queryKey: ADMIN_MENU_QUERY_KEY });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Could not delete menu item.");
@@ -105,7 +108,7 @@ export default function AdminMenuPage() {
   }
 
   function refreshMenu() {
-    queryClient.invalidateQueries({ queryKey: ["admin-menu"] });
+    queryClient.invalidateQueries({ queryKey: ADMIN_MENU_QUERY_KEY });
   }
 
   return (

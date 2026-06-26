@@ -7,8 +7,11 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { AdminSectionHeader } from "@/components/admin/AdminSectionHeader";
 import { RoomModal } from "@/components/admin/RoomModal";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { formatKES } from "@/lib/utils";
 import type { ApiResponse, Room } from "@/types";
+
+const ADMIN_ROOMS_QUERY_KEY = ["admin-rooms"] as const;
 
 async function readJson<T>(res: Response): Promise<ApiResponse<T>> {
   try {
@@ -34,9 +37,10 @@ export default function AdminRoomsPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const roomsQuery = useQuery({
-    queryKey: ["admin-rooms"],
+    queryKey: ADMIN_ROOMS_QUERY_KEY,
     queryFn: fetchRooms,
   });
+  useRealtimeTable("rooms", ADMIN_ROOMS_QUERY_KEY);
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, payload }: { id: string; payload: Partial<Room> }) => {
@@ -53,7 +57,7 @@ export default function AdminRoomsPage() {
       return data.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-rooms"] });
+      queryClient.invalidateQueries({ queryKey: ADMIN_ROOMS_QUERY_KEY });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Could not update room.");
@@ -75,7 +79,7 @@ export default function AdminRoomsPage() {
     onSuccess: () => {
       toast.success("Room deleted.");
       setConfirmDeleteId(null);
-      queryClient.invalidateQueries({ queryKey: ["admin-rooms"] });
+      queryClient.invalidateQueries({ queryKey: ADMIN_ROOMS_QUERY_KEY });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Could not delete room.");
@@ -93,7 +97,7 @@ export default function AdminRoomsPage() {
   }
 
   function refreshRooms() {
-    queryClient.invalidateQueries({ queryKey: ["admin-rooms"] });
+    queryClient.invalidateQueries({ queryKey: ADMIN_ROOMS_QUERY_KEY });
   }
 
   return (

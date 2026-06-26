@@ -8,8 +8,11 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { AdminSectionHeader } from "@/components/admin/AdminSectionHeader";
 import { EventModal } from "@/components/admin/EventModal";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { formatKES } from "@/lib/utils";
 import type { ApiResponse, Event } from "@/types";
+
+const ADMIN_EVENTS_QUERY_KEY = ["admin-events"] as const;
 
 async function readJson<T>(res: Response): Promise<ApiResponse<T>> {
   try {
@@ -35,9 +38,10 @@ export default function AdminEventsPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const eventsQuery = useQuery({
-    queryKey: ["admin-events"],
+    queryKey: ADMIN_EVENTS_QUERY_KEY,
     queryFn: fetchEvents,
   });
+  useRealtimeTable("events", ADMIN_EVENTS_QUERY_KEY);
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, payload }: { id: string; payload: Partial<Event> }) => {
@@ -54,7 +58,7 @@ export default function AdminEventsPage() {
       return data.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-events"] });
+      queryClient.invalidateQueries({ queryKey: ADMIN_EVENTS_QUERY_KEY });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Could not update event.");
@@ -76,7 +80,7 @@ export default function AdminEventsPage() {
     onSuccess: () => {
       toast.success("Event deleted.");
       setConfirmDeleteId(null);
-      queryClient.invalidateQueries({ queryKey: ["admin-events"] });
+      queryClient.invalidateQueries({ queryKey: ADMIN_EVENTS_QUERY_KEY });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Could not delete event.");
@@ -94,7 +98,7 @@ export default function AdminEventsPage() {
   }
 
   function refreshEvents() {
-    queryClient.invalidateQueries({ queryKey: ["admin-events"] });
+    queryClient.invalidateQueries({ queryKey: ADMIN_EVENTS_QUERY_KEY });
   }
 
   return (

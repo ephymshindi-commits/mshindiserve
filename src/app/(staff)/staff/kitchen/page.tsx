@@ -1,9 +1,11 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, Clock, Flame, Loader2, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { authApi, ordersApi } from "@/lib/api";
 import { capitalize, orderStatusColor, timeAgo } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
@@ -23,14 +25,59 @@ interface Order {
 }
 
 const TRACK_STEPS = ["PENDING", "CONFIRMED", "PREPARING", "READY", "DELIVERED"];
+const KITCHEN_ORDERS_QUERY_KEY = ["kitchen-orders"] as const;
+
+async function fetchKitchenOrders() {
+  const res = await ordersApi.getAll({ status: "PENDING,CONFIRMED,PREPARING,READY" });
+  return (res.data.data ?? []) as Order[];
+}
+
+function playNewOrderBeep() {
+  try {
+    const AudioContextCtor =
+      window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextCtor) return;
+
+    const audioContext = new AudioContextCtor();
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const now = audioContext.currentTime;
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(880, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.3, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.3);
+
+    window.setTimeout(() => {
+      void audioContext.close();
+    }, 400);
+  } catch {
+    // Browsers may block audio until the page has user interaction.
+  }
+}
 
 export default function KitchenPage() {
   const { user, isAuthenticated, setUser } = useAuthStore();
   const router = useRouter();
-  const [orders, setOrders] = useState<Order[]>([]);
+  const queryClient = useQueryClient();
   const [checking, setChecking] = useState(true);
-  const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
+  const previousPendingRef = useRef(0);
+  const firstOrdersLoadedRef = useRef(false);
+
+  const ordersQuery = useQuery({
+    queryKey: KITCHEN_ORDERS_QUERY_KEY,
+    queryFn: fetchKitchenOrders,
+    enabled: !checking,
+    refetchInterval: 15000,
+  });
+  useRealtimeTable("orders", KITCHEN_ORDERS_QUERY_KEY, !checking);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,37 +99,23 @@ export default function KitchenPage() {
         }
 
         setChecking(false);
-        await fetchOrders();
       } catch {
         if (!cancelled) router.replace("/login?next=/staff/kitchen");
       }
     }
 
     verifyStaff();
-    const interval = window.setInterval(fetchOrders, 15000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
     };
   }, [isAuthenticated, router, setUser, user]);
-
-  async function fetchOrders() {
-    try {
-      const res = await ordersApi.getAll({ status: "PENDING,CONFIRMED,PREPARING,READY" });
-      setOrders(res.data.data ?? []);
-    } catch {
-      toast.error("Failed to load orders");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function updateStatus(orderId: string, status: string) {
     setUpdating(orderId);
     try {
       await ordersApi.updateStatus(orderId, status);
-      await fetchOrders();
+      await queryClient.invalidateQueries({ queryKey: KITCHEN_ORDERS_QUERY_KEY });
       toast.success(`Order moved to ${capitalize(status)}`);
     } catch (error: any) {
       toast.error(error?.response?.data?.error ?? "Update failed");
@@ -91,9 +124,44 @@ export default function KitchenPage() {
     }
   }
 
+  const orders = ordersQuery.data ?? [];
   const pending = orders.filter((order) => order.status === "PENDING");
   const active = orders.filter((order) => ["CONFIRMED", "PREPARING"].includes(order.status));
   const ready = orders.filter((order) => order.status === "READY");
+
+  useEffect(() => {
+    if (checking || ordersQuery.isLoading) return;
+
+    if (!firstOrdersLoadedRef.current) {
+      firstOrdersLoadedRef.current = true;
+      previousPendingRef.current = pending.length;
+      return;
+    }
+
+    if (pending.length > previousPendingRef.current) {
+      playNewOrderBeep();
+    }
+    previousPendingRef.current = pending.length;
+  }, [checking, ordersQuery.isLoading, pending.length]);
+
+  useEffect(() => {
+    if (checking) return;
+
+    document.title =
+      pending.length > 0
+        ? `(${pending.length}) Kitchen | MshindiServe`
+        : "Kitchen | MshindiServe";
+
+    return () => {
+      document.title = "MshindiServe";
+    };
+  }, [checking, pending.length]);
+
+  useEffect(() => {
+    if (ordersQuery.isError) {
+      toast.error("Failed to load orders");
+    }
+  }, [ordersQuery.isError]);
 
   if (checking) {
     return (
@@ -112,10 +180,10 @@ export default function KitchenPage() {
             <p className="mt-1 text-xs text-zinc-500">{user?.name ?? "Kitchen staff"}</p>
           </div>
           <button
-            onClick={fetchOrders}
+            onClick={() => ordersQuery.refetch()}
             className="inline-flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-xs font-medium text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
           >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            <RefreshCw size={14} className={ordersQuery.isFetching ? "animate-spin" : ""} />
             Refresh
           </button>
         </div>
@@ -135,7 +203,7 @@ export default function KitchenPage() {
           ))}
         </div>
 
-        {loading ? (
+        {ordersQuery.isLoading ? (
           <div className="flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 p-10">
             <Loader2 size={22} className="animate-spin text-amber-400" />
           </div>

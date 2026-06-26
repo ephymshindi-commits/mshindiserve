@@ -1,8 +1,10 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import toast from "react-hot-toast";
 import { useState } from "react";
+import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { ordersApi } from "@/lib/api";
 import { capitalize, formatKES, orderStatusColor } from "@/lib/utils";
 
@@ -30,9 +32,39 @@ const STATUS_FLOW: Record<string, string | null> = {
   CANCELLED: null,
 };
 
+const ADMIN_ORDERS_QUERY_KEY = ["admin-orders"] as const;
+
+async function fetchAdminOrders() {
+  const res = await fetch("/api/orders?limit=50", {
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  let payload: { success?: boolean; data?: Order[]; error?: string };
+  try {
+    payload = (await res.json()) as { success?: boolean; data?: Order[]; error?: string };
+  } catch {
+    throw new Error("The server returned an invalid orders response.");
+  }
+
+  if (!res.ok || !payload.success) {
+    throw new Error(payload.error ?? "Failed to load orders.");
+  }
+
+  return payload.data ?? [];
+}
+
 export function AdminOrdersTable({ orders: initial, compact = false }: Props) {
-  const [orders, setOrders] = useState(initial);
+  const queryClient = useQueryClient();
   const [updating, setUpdating] = useState<string | null>(null);
+  const ordersQuery = useQuery({
+    queryKey: ADMIN_ORDERS_QUERY_KEY,
+    queryFn: fetchAdminOrders,
+    initialData: initial,
+  });
+  useRealtimeTable("orders", ADMIN_ORDERS_QUERY_KEY);
+
+  const orders = ordersQuery.data ?? [];
 
   async function advance(orderId: string, currentStatus: string) {
     const next = STATUS_FLOW[currentStatus];
@@ -40,10 +72,8 @@ export function AdminOrdersTable({ orders: initial, compact = false }: Props) {
 
     setUpdating(orderId);
     try {
-      const res = await ordersApi.updateStatus(orderId, next);
-      setOrders((prev) =>
-        prev.map((order) => (order.id === orderId ? { ...order, status: res.data.data.status } : order))
-      );
+      await ordersApi.updateStatus(orderId, next);
+      await queryClient.invalidateQueries({ queryKey: ADMIN_ORDERS_QUERY_KEY });
       toast.success(`Order moved to ${capitalize(next)}`);
     } catch (error: any) {
       toast.error(error?.response?.data?.error ?? "Failed to update order");
@@ -54,6 +84,16 @@ export function AdminOrdersTable({ orders: initial, compact = false }: Props) {
 
   return (
     <div className="overflow-x-auto">
+      {ordersQuery.isError && (
+        <div className="border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+          {ordersQuery.error instanceof Error ? ordersQuery.error.message : "Failed to load orders."}
+        </div>
+      )}
+      {ordersQuery.isFetching && (
+        <div className="border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950">
+          Refreshing orders...
+        </div>
+      )}
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-zinc-200 bg-zinc-50 text-left dark:border-zinc-800 dark:bg-zinc-950">

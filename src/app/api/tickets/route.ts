@@ -5,10 +5,10 @@ import { v4 as uuidv4 } from "uuid";
 import { prisma } from "@/lib/prisma";
 import { withAuth, logActivity } from "@/lib/middleware";
 import type { AuthenticatedRequest } from "@/lib/middleware";
-import { eventSeedData } from "@/lib/fallback-data";
 import { ticketLimiter } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
+const MAX_RETRIES = 3;
 
 export const GET = withAuth(
   async (req: AuthenticatedRequest) => {
@@ -36,6 +36,74 @@ function newTicketCode() {
   return `MS-TKT-${uuidv4().slice(0, 8).toUpperCase()}`;
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function purchaseWithRetry(eventId: string, quantity: number, userId: string) {
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      return await prisma.$transaction(
+        async (tx) => {
+          const updated = await tx.$executeRaw`
+            UPDATE events
+            SET "soldSeats" = "soldSeats" + ${quantity}
+            WHERE id = ${eventId}
+              AND "isActive" = true
+              AND date > NOW()
+              AND ("soldSeats" + ${quantity}) <= "totalSeats"
+          `;
+
+          if (updated === 0) {
+            const event = await tx.event.findUnique({
+              where: { id: eventId },
+              select: {
+                isActive: true,
+                date: true,
+                totalSeats: true,
+                soldSeats: true,
+              },
+            });
+
+            if (!event || !event.isActive) throw new Error("EVENT_NOT_FOUND");
+            if (event.date <= new Date()) throw new Error("EVENT_PAST");
+            throw new Error(`SEATS:${Math.max(0, event.totalSeats - event.soldSeats)}`);
+          }
+
+          const event = await tx.event.findUniqueOrThrow({ where: { id: eventId } });
+
+          return tx.ticket.create({
+            data: {
+              ticketCode: newTicketCode(),
+              userId,
+              eventId,
+              quantity,
+              totalAmount: event.ticketPrice * quantity,
+              status: "ACTIVE",
+              paymentStatus: "PENDING",
+            },
+            include: { event: true },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
+      );
+    } catch (error) {
+      const isConflict =
+        error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
+
+      if (isConflict && attempt < MAX_RETRIES - 1) {
+        await wait(50 * (attempt + 1));
+        continue;
+      }
+
+      if (isConflict) throw new Error("SERVER_BUSY");
+      throw error;
+    }
+  }
+
+  throw new Error("SERVER_BUSY");
+}
+
 export const POST = withAuth(
   async (req: AuthenticatedRequest) => {
     const limited = await ticketLimiter?.check(req.user.sub);
@@ -59,44 +127,7 @@ export const POST = withAuth(
     const { eventId, quantity } = parsed.data;
 
     try {
-      const ticket = await prisma.$transaction(
-        async (tx) => {
-          let event = await tx.event.findUnique({ where: { id: eventId } });
-
-          if (!event) {
-            await tx.event.createMany({ data: eventSeedData(), skipDuplicates: true });
-            event = await tx.event.findUnique({ where: { id: eventId } });
-          }
-
-          if (!event || !event.isActive || event.date < new Date()) {
-            throw new Error("EVENT_NOT_FOUND");
-          }
-
-          const remaining = event.totalSeats - event.soldSeats;
-          if (remaining < quantity) {
-            throw new Error(`ONLY_${Math.max(0, remaining)}_LEFT`);
-          }
-
-          await tx.event.update({
-            where: { id: eventId },
-            data: { soldSeats: { increment: quantity } },
-          });
-
-          return tx.ticket.create({
-            data: {
-              ticketCode: newTicketCode(),
-              userId: req.user.sub,
-              eventId,
-              quantity,
-              totalAmount: event.ticketPrice * quantity,
-              status: "ACTIVE",
-              paymentStatus: "PENDING",
-            },
-            include: { event: true },
-          });
-        },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-      );
+      const ticket = await purchaseWithRetry(eventId, quantity, req.user.sub);
 
       await logActivity({
         userId: req.user.sub,
@@ -111,13 +142,28 @@ export const POST = withAuth(
     } catch (error) {
       if (error instanceof Error) {
         if (error.message === "EVENT_NOT_FOUND") {
-          return NextResponse.json({ success: false, error: "Event not found" }, { status: 404 });
+          return NextResponse.json(
+            { success: false, error: "Event not found or no longer active" },
+            { status: 404 }
+          );
         }
-        if (error.message.startsWith("ONLY_")) {
-          const remaining = error.message.replace("ONLY_", "").replace("_LEFT", "");
+        if (error.message === "EVENT_PAST") {
+          return NextResponse.json(
+            { success: false, error: "This event has already taken place" },
+            { status: 409 }
+          );
+        }
+        if (error.message.startsWith("SEATS:")) {
+          const remaining = error.message.replace("SEATS:", "");
           return NextResponse.json(
             { success: false, error: `Only ${remaining} tickets remaining` },
             { status: 409 }
+          );
+        }
+        if (error.message === "SERVER_BUSY") {
+          return NextResponse.json(
+            { success: false, error: "Server busy, please try again" },
+            { status: 503 }
           );
         }
       }

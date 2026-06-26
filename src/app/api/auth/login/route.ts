@@ -2,15 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { signAccessToken, signRefreshToken } from "@/lib/jwt";
-import { rateLimit, logActivity } from "@/lib/middleware";
+import { logActivity } from "@/lib/middleware";
 import { setAuthCookies } from "@/lib/auth-cookies";
 import { databaseErrorResponse } from "@/lib/api-errors";
 import { DUMMY_PASSWORD_HASH, isPasswordHash, verifyPassword } from "@/lib/passwords";
+import { clientIp, loginLimiter } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const limiter = rateLimit(60_000, 10);
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 30;
 
@@ -20,7 +20,7 @@ const loginSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const limited = limiter(req);
+  const limited = await loginLimiter?.check(clientIp(req));
   if (limited) return limited;
 
   let body: unknown;

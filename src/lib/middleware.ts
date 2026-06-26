@@ -3,6 +3,7 @@ import { verifyAccessToken } from "@/lib/jwt";
 import { prisma } from "@/lib/prisma";
 import type { JWTPayload, Role } from "@/types";
 import { Prisma } from "@prisma/client";
+import { clientIp, generalLimiter } from "@/lib/rate-limit";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,38 +71,13 @@ export function withAuth(handler: Handler, requiredRoles?: Role[]) {
 
 // ─── In-memory rate limiter ────────────────────────────────────────────────────
 
-const rateLimitStore = new Map<string, { count: number; reset: number }>();
-
 export function rateLimit(windowMs: number = 60_000, max: number = 20) {
   return (req: NextRequest): NextResponse | null => {
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-      req.headers.get("x-real-ip") ??
-      "unknown";
+    const key = `${clientIp(req)}:${req.method}:${req.nextUrl.pathname}:${windowMs}:${max}`;
+    void generalLimiter?.check(key).catch((error) => {
+      console.warn("[Rate limit shim]", error);
+    });
 
-    const key = `${ip}:${req.nextUrl.pathname}`;
-    const now = Date.now();
-    const entry = rateLimitStore.get(key);
-
-    if (!entry || now > entry.reset) {
-      rateLimitStore.set(key, { count: 1, reset: now + windowMs });
-      return null;
-    }
-
-    entry.count++;
-    if (entry.count > max) {
-      return NextResponse.json(
-        { success: false, error: "Too many requests — please slow down" },
-        {
-          status: 429,
-          headers: {
-            "Retry-After": String(Math.ceil((entry.reset - now) / 1000)),
-            "X-RateLimit-Limit": String(max),
-            "X-RateLimit-Remaining": "0",
-          },
-        }
-      );
-    }
     return null;
   };
 }

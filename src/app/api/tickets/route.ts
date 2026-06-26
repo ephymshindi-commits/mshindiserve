@@ -3,11 +3,10 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import { prisma } from "@/lib/prisma";
-import { withAuth, rateLimit, logActivity } from "@/lib/middleware";
+import { withAuth, logActivity } from "@/lib/middleware";
 import type { AuthenticatedRequest } from "@/lib/middleware";
 import { eventSeedData } from "@/lib/fallback-data";
-
-const limiter = rateLimit(60_000, 10);
+import { ticketLimiter } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +38,7 @@ function newTicketCode() {
 
 export const POST = withAuth(
   async (req: AuthenticatedRequest) => {
-    const limited = limiter(req);
+    const limited = await ticketLimiter?.check(req.user.sub);
     if (limited) return limited;
 
     let body: unknown;

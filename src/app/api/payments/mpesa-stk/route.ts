@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { withAuth, rateLimit } from "@/lib/middleware";
+import { withAuth } from "@/lib/middleware";
 import { initiateStkPush } from "@/lib/mpesa";
 import type { AuthenticatedRequest } from "@/lib/middleware";
-
-const limiter = rateLimit(60_000, 5);
+import { mpesaLimiter } from "@/lib/rate-limit";
 
 const stkSchema = z.object({
   phoneNumber: z.string().regex(/^(\+254|0)[17]\d{8}$/, "Enter a valid Safaricom number"),
@@ -28,7 +27,7 @@ function hasMpesaConfig() {
 
 export const POST = withAuth(
   async (req: AuthenticatedRequest) => {
-    const limited = limiter(req);
+    const limited = await mpesaLimiter?.check(req.user.sub);
     if (limited) return limited;
 
     let body: unknown;

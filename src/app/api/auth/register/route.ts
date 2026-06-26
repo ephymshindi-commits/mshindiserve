@@ -2,15 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { signAccessToken, signRefreshToken } from "@/lib/jwt";
-import { rateLimit, logActivity } from "@/lib/middleware";
+import { logActivity } from "@/lib/middleware";
 import { setAuthCookies } from "@/lib/auth-cookies";
 import { databaseErrorResponse } from "@/lib/api-errors";
 import { hashPassword } from "@/lib/passwords";
+import { clientIp, registerLimiter } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const limiter = rateLimit(60_000, 5); // 5 registrations per minute per IP
 
 const registerSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(60),
@@ -27,8 +26,7 @@ const registerSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  // Rate limit
-  const limited = limiter(req);
+  const limited = await registerLimiter?.check(clientIp(req));
   if (limited) return limited;
 
   let body: unknown;

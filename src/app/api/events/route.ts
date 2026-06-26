@@ -14,11 +14,12 @@ export async function GET(req: NextRequest) {
   if (limited) return limited;
 
   const includePast = req.nextUrl.searchParams.get("past") === "true";
+  const available = req.nextUrl.searchParams.get("available");
 
   try {
     let events = await prisma.event.findMany({
       where: {
-        isActive: true,
+        ...(available === "false" ? {} : { isActive: true }),
         ...(includePast ? {} : { date: { gte: new Date() } }),
       },
       orderBy: { date: "asc" },
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
       await prisma.event.createMany({ data: eventSeedData(), skipDuplicates: true });
       events = await prisma.event.findMany({
         where: {
-          isActive: true,
+          ...(available === "false" ? {} : { isActive: true }),
           ...(includePast ? {} : { date: { gte: new Date() } }),
         },
         orderBy: { date: "asc" },

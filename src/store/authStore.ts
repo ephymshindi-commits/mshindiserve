@@ -36,9 +36,17 @@ export const useAuthStore = create<AuthState>()(
     {
       name: "ms-auth",
       storage: createJSONStorage(() => sessionStorage), // sessionStorage: cleared on tab close
+      version: 2,
+      migrate: (persistedState) => {
+        const state = persistedState as Partial<AuthState>;
+        return {
+          user: state.user ?? null,
+          accessToken: null,
+          isAuthenticated: Boolean(state.isAuthenticated),
+        };
+      },
       partialize: (state) => ({
         user: state.user,
-        accessToken: state.accessToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }

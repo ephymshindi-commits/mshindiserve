@@ -150,7 +150,7 @@ export async function logActivity({
 // ─── Shared CORS headers ───────────────────────────────────────────────────────
 
 export const corsHeaders = {
-  "Access-Control-Allow-Origin": process.env.NEXT_PUBLIC_APP_URL ?? "*",
+  "Access-Control-Allow-Origin": process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
   "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type,Authorization",
   "Access-Control-Allow-Credentials": "true",

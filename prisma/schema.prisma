@@ -91,22 +91,24 @@ enum LiquorOutlet {
 // ─── MODELS ───────────────────────────────────────────────────────────────────
 
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  phone        String?  @unique
-  passwordHash String
-  role         Role     @default(CUSTOMER)
-  avatarUrl    String?
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                  String    @id @default(cuid())
+  name                String
+  email               String    @unique
+  phone               String?   @unique
+  passwordHash        String
+  role                Role      @default(CUSTOMER)
+  avatarUrl           String?
+  isActive            Boolean   @default(true)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  orders        Order[]
-  bookings      Booking[]
-  tickets       Ticket[]
-  refreshTokens RefreshToken[]
-  activityLogs  ActivityLog[]
+  orders             Order[]
+  bookings           Booking[]
+  tickets            Ticket[]
+  refreshTokens      RefreshToken[]
+  activityLogs       ActivityLog[]
   liquorTransactions LiquorTransaction[]
 
   @@map("users")
@@ -128,7 +130,7 @@ model MenuItem {
   id          String       @id @default(cuid())
   name        String
   description String
-  price       Int          // in KES cents (multiply by 100)
+  price       Int // in KES cents (multiply by 100)
   category    MenuCategory
   imageUrl    String?
   emoji       String       @default("🍽️")
@@ -165,16 +167,16 @@ model LiquorItem {
 }
 
 model LiquorTransaction {
-  id           String                @id @default(uuid())
-  liquorItemId String
-  type         LiquorTransactionType
-  quantity     Float
-  outlet       LiquorOutlet
-  userId       String?
+  id              String                @id @default(uuid())
+  liquorItemId    String
+  type            LiquorTransactionType
+  quantity        Float
+  outlet          LiquorOutlet
+  userId          String?
   unitRetailPrice Decimal?              @db.Decimal(12, 2)
-  totalAmount  Decimal?                 @db.Decimal(12, 2)
-  description  String?
-  timestamp    DateTime              @default(now())
+  totalAmount     Decimal?              @db.Decimal(12, 2)
+  description     String?
+  timestamp       DateTime              @default(now())
 
   liquorItem LiquorItem @relation(fields: [liquorItemId], references: [id], onDelete: Cascade)
   user       User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -190,7 +192,7 @@ model Order {
   orderNumber   String        @unique
   userId        String
   status        OrderStatus   @default(PENDING)
-  totalAmount   Int           // in KES cents
+  totalAmount   Int // in KES cents
   notes         String?
   tableNumber   String?
   isDelivery    Boolean       @default(false)
@@ -212,7 +214,7 @@ model OrderItem {
   orderId    String
   menuItemId String
   quantity   Int
-  unitPrice  Int      // price at time of order
+  unitPrice  Int // price at time of order
   notes      String?
   createdAt  DateTime @default(now())
 
@@ -223,18 +225,18 @@ model OrderItem {
 }
 
 model Room {
-  id          String   @id @default(cuid())
-  name        String
-  description String
-  pricePerNight Int    // in KES cents
-  capacity    Int      @default(2)
-  amenities   String[] // array of amenity strings
-  imageUrl    String?
-  emoji       String   @default("🛏️")
-  isAvailable Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  name          String
+  description   String
+  pricePerNight Int // in KES cents
+  capacity      Int      @default(2)
+  amenities     String[] // array of amenity strings
+  imageUrl      String?
+  emoji         String   @default("🛏️")
+  isAvailable   Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   bookings Booking[]
 
@@ -249,7 +251,7 @@ model Booking {
   checkIn       DateTime
   checkOut      DateTime
   guests        Int           @default(1)
-  totalAmount   Int           // in KES cents
+  totalAmount   Int // in KES cents
   status        BookingStatus @default(PENDING)
   specialReqs   String?
   paymentStatus PaymentStatus @default(PENDING)
@@ -257,8 +259,8 @@ model Booking {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  user    User    @relation(fields: [userId], references: [id])
-  room    Room    @relation(fields: [roomId], references: [id])
+  user    User     @relation(fields: [userId], references: [id])
+  room    Room     @relation(fields: [roomId], references: [id])
   payment Payment?
 
   @@map("bookings")
@@ -270,7 +272,7 @@ model Event {
   description String
   date        DateTime
   venue       String   @default("Fine Breeze Bar & Grill")
-  ticketPrice Int      // in KES cents
+  ticketPrice Int // in KES cents
   totalSeats  Int
   soldSeats   Int      @default(0)
   imageUrl    String?
@@ -284,41 +286,41 @@ model Event {
 }
 
 model Ticket {
-  id         String       @id @default(cuid())
-  ticketCode String       @unique
-  userId     String
-  eventId    String
-  quantity   Int          @default(1)
-  totalAmount Int         // in KES cents
-  status     TicketStatus @default(ACTIVE)
-  usedAt     DateTime?
+  id            String        @id @default(cuid())
+  ticketCode    String        @unique
+  userId        String
+  eventId       String
+  quantity      Int           @default(1)
+  totalAmount   Int // in KES cents
+  status        TicketStatus  @default(ACTIVE)
+  usedAt        DateTime?
   paymentStatus PaymentStatus @default(PENDING)
-  mpesaRef   String?
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  mpesaRef      String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  user    User    @relation(fields: [userId], references: [id])
-  event   Event   @relation(fields: [eventId], references: [id])
+  user    User     @relation(fields: [userId], references: [id])
+  event   Event    @relation(fields: [eventId], references: [id])
   payment Payment?
 
   @@map("tickets")
 }
 
 model Payment {
-  id              String        @id @default(cuid())
-  mpesaRef        String?       @unique
-  checkoutRequestId String?     @unique
+  id                String        @id @default(cuid())
+  mpesaRef          String?       @unique
+  checkoutRequestId String?       @unique
   merchantRequestId String?
-  amount          Int           // in KES cents
-  phoneNumber     String
-  status          PaymentStatus @default(PENDING)
-  resultCode      String?
-  resultDesc      String?
-  orderId         String?       @unique
-  bookingId       String?       @unique
-  ticketId        String?       @unique
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  amount            Int // in KES cents
+  phoneNumber       String
+  status            PaymentStatus @default(PENDING)
+  resultCode        String?
+  resultDesc        String?
+  orderId           String?       @unique
+  bookingId         String?       @unique
+  ticketId          String?       @unique
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   order   Order?   @relation(fields: [orderId], references: [id])
   booking Booking? @relation(fields: [bookingId], references: [id])
@@ -328,17 +330,38 @@ model Payment {
 }
 
 model ActivityLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  action    String
-  resource  String
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  resource   String
   resourceId String?
-  details   Json?
-  ipAddress String?
-  userAgent String?
-  createdAt DateTime @default(now())
+  details    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id])
 
   @@map("activity_logs")
+}
+
+model TenantConfig {
+  id             String   @id @default(cuid())
+  businessName   String   @default("Fine Breeze Bar & Grill")
+  tagline        String?  @default("Where Every Moment is Crafted to Perfection")
+  logoUrl        String?
+  primaryColor   String   @default("#f59e0b")
+  accentColor    String   @default("#1c1917")
+  currency       String   @default("KES")
+  currencySymbol String   @default("KES ")
+  mpesaShortcode String?
+  supportPhone   String?  @default("+254 700 000 000")
+  supportEmail   String?  @default("info@finebreeze.co.ke")
+  address        String?  @default("Westlands, Nairobi, Kenya")
+  timezone       String   @default("Africa/Nairobi")
+  features       Json     @default("{\"rooms\":true,\"events\":true,\"bar\":true,\"kitchen\":true,\"concierge\":true,\"mpesa\":true}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("tenant_config")
 }

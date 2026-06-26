@@ -11,6 +11,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const limiter = rateLimit(60_000, 10);
+const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_MINUTES = 30;
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -49,9 +51,19 @@ export async function POST(req: NextRequest) {
         role: true,
         passwordHash: true,
         isActive: true,
+        failedLoginAttempts: true,
+        lockedUntil: true,
         createdAt: true,
       },
     });
+
+    if (user?.lockedUntil && user.lockedUntil > new Date()) {
+      const mins = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+      return NextResponse.json(
+        { success: false, error: `Account locked for ${mins} more minute(s).` },
+        { status: 423 }
+      );
+    }
 
     const canUsePassword = isPasswordHash(user?.passwordHash);
     const valid =
@@ -74,6 +86,31 @@ export async function POST(req: NextRequest) {
     }
 
     if (!user || !valid) {
+      if (user && canUsePassword) {
+        const failedLoginAttempts = user.failedLoginAttempts + 1;
+
+        if (failedLoginAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+          const lockedUntil = new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000);
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { failedLoginAttempts, lockedUntil },
+          });
+
+          return NextResponse.json(
+            {
+              success: false,
+              error: `Account locked for ${LOCKOUT_MINUTES} more minute(s).`,
+            },
+            { status: 423 }
+          );
+        }
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { failedLoginAttempts },
+        });
+      }
+
       return NextResponse.json(
         { success: false, error: "Invalid email or password" },
         { status: 401 }
@@ -85,6 +122,13 @@ export async function POST(req: NextRequest) {
         { success: false, error: "Account suspended. Contact support." },
         { status: 403 }
       );
+    }
+
+    if (user.failedLoginAttempts !== 0 || user.lockedUntil) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { failedLoginAttempts: 0, lockedUntil: null },
+      });
     }
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -105,7 +149,12 @@ export async function POST(req: NextRequest) {
       req,
     });
 
-    const { passwordHash: _, ...safeUser } = user;
+    const {
+      passwordHash: _,
+      failedLoginAttempts: __,
+      lockedUntil: ___,
+      ...safeUser
+    } = user;
     const response = NextResponse.json({
       success: true,
       data: { accessToken, user: safeUser },

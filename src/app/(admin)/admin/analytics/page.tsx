@@ -2,6 +2,7 @@ import { endOfDay, format, startOfDay, subDays } from "date-fns";
 import { AdminSectionHeader } from "@/components/admin/AdminSectionHeader";
 import { RevenueChart } from "@/components/admin/RevenueChart";
 import { prisma } from "@/lib/prisma";
+import { formatKES } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -24,11 +25,11 @@ async function getAnalytics() {
     const revenueByDay = Array.from({ length: 7 }, (_, index) => {
       const date = subDays(today, 6 - index);
       const key = format(date, "yyyy-MM-dd");
-      const amount = payments
+      const foodRevenue = payments
         .filter((payment) => format(new Date(payment.createdAt), "yyyy-MM-dd") === key)
         .reduce((sum, payment) => sum + payment.amount, 0);
 
-      return { date: format(date, "EEE"), amount: Math.round(amount / 100) };
+      return { month: format(date, "EEE"), foodRevenue, roomRevenue: 0, ticketRevenue: 0 };
     });
 
     const todayRevenue = payments
@@ -39,8 +40,8 @@ async function getAnalytics() {
       .reduce((sum, payment) => sum + payment.amount, 0);
 
     return {
-      todayRevenue: Math.round(todayRevenue / 100),
-      weeklyRevenue: revenueByDay.reduce((sum, item) => sum + item.amount, 0),
+      todayRevenue,
+      weeklyRevenue: revenueByDay.reduce((sum, item) => sum + item.foodRevenue, 0),
       orders,
       bookings,
       tickets,
@@ -57,8 +58,10 @@ async function getAnalytics() {
       tickets: 0,
       users: 0,
       revenueByDay: Array.from({ length: 7 }, (_, index) => ({
-        date: format(subDays(today, 6 - index), "EEE"),
-        amount: 0,
+        month: format(subDays(today, 6 - index), "EEE"),
+        foodRevenue: 0,
+        roomRevenue: 0,
+        ticketRevenue: 0,
       })),
     };
   }
@@ -76,8 +79,8 @@ export default async function AdminAnalyticsPage() {
 
       <div className="grid gap-4 md:grid-cols-5">
         {[
-          ["Today revenue", `KES ${data.todayRevenue.toLocaleString()}`],
-          ["Week revenue", `KES ${data.weeklyRevenue.toLocaleString()}`],
+          ["Today revenue", formatKES(data.todayRevenue)],
+          ["Week revenue", formatKES(data.weeklyRevenue)],
           ["Orders", data.orders],
           ["Bookings", data.bookings],
           ["Tickets", data.tickets],

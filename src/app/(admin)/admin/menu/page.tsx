@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Pencil, Plus, RefreshCcw, Star, Trash2 } from "lucide-react";
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { AdminSectionHeader } from "@/components/admin/AdminSectionHeader";
 import { MenuItemModal } from "@/components/admin/MenuItemModal";
@@ -47,6 +47,20 @@ export default function AdminMenuPage() {
     queryFn: fetchMenuItems,
   });
   useRealtimeTable("menu_items", ADMIN_MENU_QUERY_KEY);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shouldOpenCreate = params.get("new") === "menu" || params.get("new") === "1";
+
+    if (!shouldOpenCreate) return;
+
+    setEditingItem(null);
+    setModalOpen(true);
+    params.delete("new");
+
+    const nextSearch = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}`);
+  }, []);
 
   const filteredItems = useMemo(() => {
     const items = menuQuery.data ?? [];

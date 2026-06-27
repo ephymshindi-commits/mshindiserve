@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { CalendarClock, Loader2, Pencil, Plus, RefreshCcw, Ticket, Trash2 } from "lucide-react";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { AdminSectionHeader } from "@/components/admin/AdminSectionHeader";
 import { EventModal } from "@/components/admin/EventModal";
@@ -42,6 +42,20 @@ export default function AdminEventsPage() {
     queryFn: fetchEvents,
   });
   useRealtimeTable("events", ADMIN_EVENTS_QUERY_KEY);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shouldOpenCreate = params.get("new") === "event" || params.get("new") === "1";
+
+    if (!shouldOpenCreate) return;
+
+    setEditingEvent(null);
+    setModalOpen(true);
+    params.delete("new");
+
+    const nextSearch = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}`);
+  }, []);
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, payload }: { id: string; payload: Partial<Event> }) => {

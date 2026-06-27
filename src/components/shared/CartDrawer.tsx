@@ -1,10 +1,11 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { CheckCircle2, Loader2, Minus, Plus, ShoppingBag, Smartphone, Trash2, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Minus, Plus, ShoppingBag, Smartphone, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { AuthModal } from "@/components/shared/AuthModal";
+import { usePaymentPoller } from "@/hooks/usePaymentPoller";
 import { ordersApi, paymentsApi } from "@/lib/api";
 import { formatKES } from "@/lib/utils";
 import { labelFromEnum } from "@/lib/visuals";
@@ -12,6 +13,13 @@ import { useAuthStore } from "@/store/authStore";
 import { useCartStore } from "@/store/cartStore";
 
 type CheckoutStep = "cart" | "payment" | "success";
+type ConfirmedOrder = {
+  id: string;
+  number: string;
+  paymentStatus: "PENDING" | "COMPLETED" | "FAILED";
+  mpesaRef?: string | null;
+  message?: string;
+};
 
 export function CartDrawer() {
   const {
@@ -29,10 +37,27 @@ export function CartDrawer() {
   const [phone, setPhone] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [confirmedOrder, setConfirmedOrder] = useState<{ number: string } | null>(null);
+  const [confirmedOrder, setConfirmedOrder] = useState<ConfirmedOrder | null>(null);
   const [showAuth, setShowAuth] = useState(false);
 
   const total = totalAmount();
+  const paymentPoller = usePaymentPoller({
+    resourceId: confirmedOrder?.id,
+    resourceType: "order",
+    enabled: step === "success" && confirmedOrder?.paymentStatus === "PENDING",
+    onCompleted: (mpesaRef) => {
+      setConfirmedOrder((current) =>
+        current ? { ...current, paymentStatus: "COMPLETED", mpesaRef } : current
+      );
+      clearCart();
+    },
+    onFailed: (reason) => {
+      setConfirmedOrder((current) =>
+        current ? { ...current, paymentStatus: "FAILED", message: reason } : current
+      );
+      toast.error(reason);
+    },
+  });
 
   function handleCheckout() {
     if (!isAuthenticated) {
@@ -62,9 +87,15 @@ export function CartDrawer() {
       });
 
       const order = orderRes.data.data;
-      await paymentsApi.stkPush({ phoneNumber: normalizedPhone, orderId: order.id });
+      const paymentRes = await paymentsApi.stkPush({ phoneNumber: normalizedPhone, orderId: order.id });
+      const paymentMessage = paymentRes.data.data?.message;
 
-      setConfirmedOrder({ number: order.orderNumber });
+      setConfirmedOrder({
+        id: order.id,
+        number: order.orderNumber,
+        paymentStatus: "PENDING",
+        message: paymentMessage,
+      });
       setStep("success");
       clearCart();
     } catch (err: any) {
@@ -261,16 +292,43 @@ export function CartDrawer() {
 
             {step === "success" && (
               <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
-                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-                  <CheckCircle2 size={30} />
+                <div
+                  className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full ${
+                    confirmedOrder?.paymentStatus === "FAILED"
+                      ? "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300"
+                      : confirmedOrder?.paymentStatus === "COMPLETED"
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                        : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+                  }`}
+                >
+                  {confirmedOrder?.paymentStatus === "FAILED" ? (
+                    <AlertCircle size={30} />
+                  ) : confirmedOrder?.paymentStatus === "COMPLETED" ? (
+                    <CheckCircle2 size={30} />
+                  ) : (
+                    <Loader2 size={30} className="animate-spin" />
+                  )}
                 </div>
                 <h3 className="text-lg font-semibold text-zinc-950 dark:text-white">
-                  Order placed
+                  {confirmedOrder?.paymentStatus === "COMPLETED"
+                    ? "Payment confirmed"
+                    : confirmedOrder?.paymentStatus === "FAILED"
+                      ? "Payment not confirmed"
+                      : "Waiting for M-Pesa confirmation"}
                 </h3>
                 <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">
-                  Check your phone to complete the payment. The kitchen will confirm your order
-                  once payment is received.
+                  {confirmedOrder?.paymentStatus === "COMPLETED"
+                    ? "Your payment is confirmed and the kitchen has received your order."
+                    : confirmedOrder?.paymentStatus === "FAILED"
+                      ? confirmedOrder.message ?? "We could not confirm payment. Check your M-Pesa messages before trying again."
+                      : "Check your phone and enter your M-Pesa PIN. We will update this order as soon as confirmation arrives."}
                 </p>
+
+                {paymentPoller.isPolling && (
+                  <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                    Waiting for M-Pesa confirmation... {Math.ceil(paymentPoller.secondsRemaining)}s remaining
+                  </div>
+                )}
 
                 {confirmedOrder && (
                   <div className="mt-6 w-full rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
@@ -278,6 +336,14 @@ export function CartDrawer() {
                     <p className="mt-1 font-mono text-lg font-semibold text-amber-700 dark:text-amber-400">
                       {confirmedOrder.number}
                     </p>
+                    {confirmedOrder.mpesaRef && (
+                      <>
+                        <p className="mt-3 text-xs text-zinc-500">M-Pesa reference</p>
+                        <p className="mt-1 font-mono text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                          {confirmedOrder.mpesaRef}
+                        </p>
+                      </>
+                    )}
                   </div>
                 )}
 

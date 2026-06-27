@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { signAccessToken, signRefreshToken } from "@/lib/jwt";
@@ -7,6 +8,7 @@ import { setAuthCookies } from "@/lib/auth-cookies";
 import { databaseErrorResponse } from "@/lib/api-errors";
 import { DUMMY_PASSWORD_HASH, isPasswordHash, verifyPassword } from "@/lib/passwords";
 import { clientIp, loginLimiter } from "@/lib/rate-limit";
+import type { Role } from "@/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +20,70 @@ const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1, "Password is required"),
 });
+
+type LoginUser = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: Role;
+  passwordHash: string;
+  isActive: boolean;
+  failedLoginAttempts?: number;
+  lockedUntil?: Date | null;
+  createdAt: Date;
+};
+
+const baseLoginUserSelect = {
+  id: true,
+  name: true,
+  email: true,
+  phone: true,
+  role: true,
+  passwordHash: true,
+  isActive: true,
+  createdAt: true,
+} as const;
+
+const lockoutLoginUserSelect = {
+  ...baseLoginUserSelect,
+  failedLoginAttempts: true,
+  lockedUntil: true,
+} as const;
+
+function isMissingLockoutColumnError(error: unknown) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022") {
+    const column = String(error.meta?.column ?? "");
+    return column.includes("failedLoginAttempts") || column.includes("lockedUntil");
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    (message.includes("failedLoginAttempts") || message.includes("lockedUntil")) &&
+    (message.includes("does not exist") || message.includes("column"))
+  );
+}
+
+async function findLoginUser(email: string): Promise<{ user: LoginUser | null; lockoutEnabled: boolean }> {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: lockoutLoginUserSelect,
+    });
+
+    return { user: user as LoginUser | null, lockoutEnabled: true };
+  } catch (error) {
+    if (!isMissingLockoutColumnError(error)) throw error;
+
+    console.warn("[Login] Lockout columns missing; continuing without lockout enforcement.");
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: baseLoginUserSelect,
+    });
+
+    return { user: user as LoginUser | null, lockoutEnabled: false };
+  }
+}
 
 export async function POST(req: NextRequest) {
   const limited = await loginLimiter?.check(clientIp(req));
@@ -41,23 +107,9 @@ export async function POST(req: NextRequest) {
   try {
     const { email, password } = parsed.data;
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        role: true,
-        passwordHash: true,
-        isActive: true,
-        failedLoginAttempts: true,
-        lockedUntil: true,
-        createdAt: true,
-      },
-    });
+    const { user, lockoutEnabled } = await findLoginUser(email);
 
-    if (user?.lockedUntil && user.lockedUntil > new Date()) {
+    if (lockoutEnabled && user?.lockedUntil && user.lockedUntil > new Date()) {
       const mins = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
       return NextResponse.json(
         { success: false, error: `Account locked for ${mins} more minute(s).` },
@@ -86,8 +138,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (!user || !valid) {
-      if (user && canUsePassword) {
-        const failedLoginAttempts = user.failedLoginAttempts + 1;
+      if (lockoutEnabled && user && canUsePassword) {
+        const failedLoginAttempts = (user.failedLoginAttempts ?? 0) + 1;
 
         if (failedLoginAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
           const lockedUntil = new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000);
@@ -124,7 +176,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (user.failedLoginAttempts !== 0 || user.lockedUntil) {
+    if (lockoutEnabled && ((user.failedLoginAttempts ?? 0) !== 0 || user.lockedUntil)) {
       await prisma.user.update({
         where: { id: user.id },
         data: { failedLoginAttempts: 0, lockedUntil: null },

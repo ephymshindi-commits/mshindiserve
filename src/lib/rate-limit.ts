@@ -25,7 +25,14 @@ export function createRateLimit(requests: number, window: Duration): RateLimit |
 
   return {
     async check(identifier: string) {
-      const result = await limiter.limit(identifier);
+      let result: Awaited<ReturnType<typeof limiter.limit>>;
+      try {
+        result = await limiter.limit(identifier);
+      } catch (error) {
+        console.warn("[Rate limit] Upstash check failed; allowing request.", error);
+        return null;
+      }
+
       if (result.success) return null;
 
       const retryAfter = Math.max(1, Math.ceil((result.reset - Date.now()) / 1000));

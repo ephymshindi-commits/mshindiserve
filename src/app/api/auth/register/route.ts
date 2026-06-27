@@ -156,6 +156,7 @@ async function createAccount(
     // Check existing user
     const existing = await prisma.user.findFirst({
       where: { OR: [{ email }, ...(phone ? [{ phone }] : [])] },
+      select: { id: true },
     });
 
     if (existing) {

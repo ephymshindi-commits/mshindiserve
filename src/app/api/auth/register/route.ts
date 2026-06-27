@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { signAccessToken, signRefreshToken } from "@/lib/jwt";
@@ -13,6 +14,25 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const roles = ["CUSTOMER", "KITCHEN", "RECEPTION", "ADMIN"] as const;
+type RegisterRole = (typeof roles)[number];
+
+const safeUserSelect = {
+  id: true,
+  name: true,
+  email: true,
+  phone: true,
+  role: true,
+  createdAt: true,
+} as const;
+
+type SafeRegisteredUser = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: RegisterRole;
+  createdAt: Date;
+};
 
 const registerSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(60),
@@ -37,6 +57,83 @@ function isAdminCreateRequest(body: unknown) {
     "adminCreate" in body &&
     (body as { adminCreate?: unknown }).adminCreate === true
   );
+}
+
+async function insertUserCompat({
+  name,
+  email,
+  phone,
+  passwordHash,
+  role,
+}: {
+  name: string;
+  email: string;
+  phone?: string;
+  passwordHash: string;
+  role: RegisterRole;
+}) {
+  const id = randomUUID();
+  const now = new Date();
+  const phoneValue = phone ?? null;
+
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "users" ("id", "name", "email", "phone", "passwordHash", "role", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, '${role}', $6, $7)`,
+      id,
+      name,
+      email,
+      phoneValue,
+      passwordHash,
+      now,
+      now
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("updatedAt")) throw error;
+
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "users" ("id", "name", "email", "phone", "passwordHash", "role", "createdAt")
+       VALUES ($1, $2, $3, $4, $5, '${role}', $6)`,
+      id,
+      name,
+      email,
+      phoneValue,
+      passwordHash,
+      now
+    );
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id },
+    select: safeUserSelect,
+  });
+
+  if (!user) {
+    throw new Error("User was inserted but could not be loaded.");
+  }
+
+  return user as SafeRegisteredUser;
+}
+
+async function createUserRecord(data: {
+  name: string;
+  email: string;
+  phone?: string;
+  passwordHash: string;
+  role: RegisterRole;
+}) {
+  try {
+    const user = await prisma.user.create({
+      data,
+      select: safeUserSelect,
+    });
+
+    return user as SafeRegisteredUser;
+  } catch (error) {
+    console.warn("[Register] Prisma user.create failed; retrying compatible insert.", error);
+    return insertUserCompat(data);
+  }
 }
 
 async function createAccount(
@@ -70,10 +167,7 @@ async function createAccount(
 
     const passwordHash = await hashPassword(password);
 
-    const user = await prisma.user.create({
-      data: { name, email, phone, passwordHash, role },
-      select: { id: true, name: true, email: true, phone: true, role: true, createdAt: true },
-    });
+    const user = await createUserRecord({ name, email, phone, passwordHash, role });
 
     if (adminCreate) {
       await logActivity({

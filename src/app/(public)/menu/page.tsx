@@ -1,5 +1,5 @@
 import { MenuBrowser } from "@/components/public/MenuBrowser";
-import { demoMenuItems, menuSeedData } from "@/lib/fallback-data";
+import { demoMenuItems, getLiquorItems, menuSeedData } from "@/lib/fallback-data";
 import { prisma } from "@/lib/prisma";
 import type { MenuItem } from "@/types";
 
@@ -29,6 +29,7 @@ async function getMenuItems(): Promise<MenuItem[]> {
 
 export default async function MenuPage() {
   const items = await getMenuItems();
+  const liquorItems = getLiquorItems();
 
   return (
     <div className="bg-stone-50 pb-16 dark:bg-zinc-950">
@@ -42,15 +43,15 @@ export default async function MenuPage() {
               Order food from Fine Breeze
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-600 dark:text-zinc-400">
-              Browse grill favorites, coastal seafood, house cocktails, starters, and desserts.
-              Add dishes to your cart and check out securely with M-Pesa.
+              Browse grill favorites, coastal seafood, bar pours, starters, and desserts.
+              Add your selections to cart and check out securely with M-Pesa.
             </p>
           </div>
 
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
             <div className="grid grid-cols-3 gap-3 text-center">
               {[
-                ["Items", items.length],
+                ["Items", items.length + liquorItems.length],
                 ["Payment", "M-Pesa"],
                 ["Kitchen", "Live"],
               ].map(([label, value]) => (
@@ -65,7 +66,7 @@ export default async function MenuPage() {
       </section>
 
       <section className="mx-auto max-w-6xl px-4 py-8">
-        <MenuBrowser items={items} />
+        <MenuBrowser items={items} liquorItems={liquorItems} />
       </section>
     </div>
   );

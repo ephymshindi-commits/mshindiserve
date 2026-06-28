@@ -1,10 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { withAuth } from "@/lib/middleware";
 import { initiateStkPush } from "@/lib/mpesa";
-import type { AuthenticatedRequest } from "@/lib/middleware";
-import { mpesaLimiter } from "@/lib/rate-limit";
+import { clientIp, mpesaLimiter } from "@/lib/rate-limit";
+import { getOptionalAuth, isGuestCheckoutUser } from "@/lib/guest-checkout";
 
 const stkSchema = z.object({
   phoneNumber: z.string().regex(/^(\+254|0)[17]\d{8}$/, "Enter a valid Safaricom number"),
@@ -25,130 +24,171 @@ function hasMpesaConfig() {
   );
 }
 
-export const POST = withAuth(
-  async (req: AuthenticatedRequest) => {
-    const limited = await mpesaLimiter?.check(req.user.sub);
-    if (limited) return limited;
+export async function POST(req: NextRequest) {
+  const authUser = await getOptionalAuth(req);
+  const limited = await mpesaLimiter?.check(authUser?.sub ?? clientIp(req));
+  if (limited) return limited;
 
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ success: false, error: "Invalid JSON" }, { status: 400 });
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ success: false, error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const parsed = stkSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0].message },
+      { status: 422 }
+    );
+  }
+
+  const { phoneNumber, orderId, bookingId, ticketId } = parsed.data;
+  const sourceCount = [orderId, bookingId, ticketId].filter(Boolean).length;
+
+  if (sourceCount !== 1) {
+    return NextResponse.json(
+      { success: false, error: "Provide exactly one payment source" },
+      { status: 400 }
+    );
+  }
+
+  let amount = 0;
+  let reference = "";
+  let description = "Fine Breeze Payment";
+
+  if (orderId) {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { user: { select: { email: true } } },
+    });
+    if (!order) {
+      return NextResponse.json({ success: false, error: "Order not found" }, { status: 404 });
     }
 
-    const parsed = stkSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: parsed.error.errors[0].message },
-        { status: 422 }
-      );
+    const canPayOrder =
+      authUser?.role === "ADMIN" ||
+      authUser?.sub === order.userId ||
+      (!authUser && isGuestCheckoutUser(order.user));
+    if (!canPayOrder) {
+      return NextResponse.json({ success: false, error: "Order not found" }, { status: 404 });
     }
 
-    const { phoneNumber, orderId, bookingId, ticketId } = parsed.data;
-    const sourceCount = [orderId, bookingId, ticketId].filter(Boolean).length;
-
-    if (sourceCount !== 1) {
-      return NextResponse.json(
-        { success: false, error: "Provide exactly one payment source" },
-        { status: 400 }
-      );
+    if (order.paymentStatus === "COMPLETED") {
+      return NextResponse.json({ success: false, error: "Order already paid" }, { status: 400 });
     }
 
-    let amount = 0;
-    let reference = "";
-    let description = "Fine Breeze Payment";
+    amount = Math.ceil(order.totalAmount / 100);
+    reference = order.orderNumber;
+    description = "Food Order";
+  }
 
-    if (orderId) {
-      const order = await prisma.order.findUnique({ where: { id: orderId } });
-      if (!order || order.userId !== req.user.sub) {
-        return NextResponse.json({ success: false, error: "Order not found" }, { status: 404 });
-      }
-      if (order.paymentStatus === "COMPLETED") {
-        return NextResponse.json({ success: false, error: "Order already paid" }, { status: 400 });
-      }
-      amount = Math.ceil(order.totalAmount / 100);
-      reference = order.orderNumber;
-      description = "Food Order";
+  if (bookingId) {
+    if (!authUser) {
+      return NextResponse.json({ success: false, error: "Authentication required" }, { status: 401 });
     }
 
-    if (bookingId) {
-      const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
-      if (!booking || booking.userId !== req.user.sub) {
-        return NextResponse.json({ success: false, error: "Booking not found" }, { status: 404 });
-      }
-      if (booking.paymentStatus === "COMPLETED") {
-        return NextResponse.json({ success: false, error: "Booking already paid" }, { status: 400 });
-      }
-      amount = Math.ceil(booking.totalAmount / 100);
-      reference = booking.bookingNumber;
-      description = "Room Booking";
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking || (booking.userId !== authUser.sub && authUser.role !== "ADMIN")) {
+      return NextResponse.json({ success: false, error: "Booking not found" }, { status: 404 });
+    }
+    if (booking.paymentStatus === "COMPLETED") {
+      return NextResponse.json({ success: false, error: "Booking already paid" }, { status: 400 });
+    }
+    amount = Math.ceil(booking.totalAmount / 100);
+    reference = booking.bookingNumber;
+    description = "Room Booking";
+  }
+
+  if (ticketId) {
+    if (!authUser) {
+      return NextResponse.json({ success: false, error: "Authentication required" }, { status: 401 });
     }
 
-    if (ticketId) {
-      const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
-      if (!ticket || ticket.userId !== req.user.sub) {
-        return NextResponse.json({ success: false, error: "Ticket not found" }, { status: 404 });
-      }
-      if (ticket.paymentStatus === "COMPLETED") {
-        return NextResponse.json({ success: false, error: "Ticket already paid" }, { status: 400 });
-      }
-      amount = Math.ceil(ticket.totalAmount / 100);
-      reference = ticket.ticketCode;
-      description = "Event Ticket";
+    const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket || (ticket.userId !== authUser.sub && authUser.role !== "ADMIN")) {
+      return NextResponse.json({ success: false, error: "Ticket not found" }, { status: 404 });
     }
+    if (ticket.paymentStatus === "COMPLETED") {
+      return NextResponse.json({ success: false, error: "Ticket already paid" }, { status: 400 });
+    }
+    amount = Math.ceil(ticket.totalAmount / 100);
+    reference = ticket.ticketCode;
+    description = "Event Ticket";
+  }
 
-    const existingPayment = await prisma.payment.findFirst({
-      where: {
-        OR: [
-          ...(orderId ? [{ orderId }] : []),
-          ...(bookingId ? [{ bookingId }] : []),
-          ...(ticketId ? [{ ticketId }] : []),
-        ],
+  const existingPayment = await prisma.payment.findFirst({
+    where: {
+      OR: [
+        ...(orderId ? [{ orderId }] : []),
+        ...(bookingId ? [{ bookingId }] : []),
+        ...(ticketId ? [{ ticketId }] : []),
+      ],
+    },
+  });
+
+  if (existingPayment?.status === "PENDING") {
+    return NextResponse.json({
+      success: true,
+      data: {
+        checkoutRequestId: existingPayment.checkoutRequestId,
+        message: "Payment request is already pending",
       },
     });
+  }
 
-    if (existingPayment?.status === "PENDING") {
-      return NextResponse.json({
-        success: true,
-        data: {
-          checkoutRequestId: existingPayment.checkoutRequestId,
-          message: "Payment request is already pending",
-        },
-      });
-    }
-
-    async function createPendingPayment(checkoutRequestId: string, merchantRequestId: string) {
-      if (existingPayment) {
-        return prisma.payment.update({
-          where: { id: existingPayment.id },
-          data: {
-            checkoutRequestId,
-            merchantRequestId,
-            amount: amount * 100,
-            phoneNumber,
-            status: "PENDING",
-            resultCode: null,
-            resultDesc: null,
-          },
-        });
-      }
-
-      return prisma.payment.create({
+  async function createPendingPayment(checkoutRequestId: string, merchantRequestId: string) {
+    if (existingPayment) {
+      return prisma.payment.update({
+        where: { id: existingPayment.id },
         data: {
           checkoutRequestId,
           merchantRequestId,
           amount: amount * 100,
           phoneNumber,
           status: "PENDING",
-          orderId: orderId ?? null,
-          bookingId: bookingId ?? null,
-          ticketId: ticketId ?? null,
+          resultCode: null,
+          resultDesc: null,
         },
       });
     }
 
-    if (!hasMpesaConfig()) {
+    return prisma.payment.create({
+      data: {
+        checkoutRequestId,
+        merchantRequestId,
+        amount: amount * 100,
+        phoneNumber,
+        status: "PENDING",
+        orderId: orderId ?? null,
+        bookingId: bookingId ?? null,
+        ticketId: ticketId ?? null,
+      },
+    });
+  }
+
+  if (!hasMpesaConfig()) {
+    const checkoutRequestId = `DEMO-${Date.now()}`;
+    await createPendingPayment(checkoutRequestId, `DEMO-MERCHANT-${Date.now()}`);
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        checkoutRequestId,
+        demoMode: true,
+        message: "Demo payment recorded. Configure M-Pesa credentials to send live prompts.",
+      },
+    });
+  }
+
+  let stkResult: Awaited<ReturnType<typeof initiateStkPush>>;
+  try {
+    stkResult = await initiateStkPush({ phoneNumber, amount, reference, description });
+  } catch (error) {
+    console.error("[MPesa STK]", error);
+
+    if (process.env.NODE_ENV !== "production") {
       const checkoutRequestId = `DEMO-${Date.now()}`;
       await createPendingPayment(checkoutRequestId, `DEMO-MERCHANT-${Date.now()}`);
 
@@ -157,53 +197,31 @@ export const POST = withAuth(
         data: {
           checkoutRequestId,
           demoMode: true,
-          message: "Demo payment recorded. Configure M-Pesa credentials to send live prompts.",
+          message: "Demo payment recorded because live M-Pesa is unavailable locally.",
         },
       });
     }
 
-    let stkResult: Awaited<ReturnType<typeof initiateStkPush>>;
-    try {
-      stkResult = await initiateStkPush({ phoneNumber, amount, reference, description });
-    } catch (error) {
-      console.error("[MPesa STK]", error);
+    return NextResponse.json(
+      { success: false, error: "Payment initiation failed. Please try again." },
+      { status: 502 }
+    );
+  }
 
-      if (process.env.NODE_ENV !== "production") {
-        const checkoutRequestId = `DEMO-${Date.now()}`;
-        await createPendingPayment(checkoutRequestId, `DEMO-MERCHANT-${Date.now()}`);
+  if (stkResult.ResponseCode !== "0") {
+    return NextResponse.json(
+      { success: false, error: stkResult.ResponseDescription },
+      { status: 400 }
+    );
+  }
 
-        return NextResponse.json({
-          success: true,
-          data: {
-            checkoutRequestId,
-            demoMode: true,
-            message: "Demo payment recorded because live M-Pesa is unavailable locally.",
-          },
-        });
-      }
+  await createPendingPayment(stkResult.CheckoutRequestID, stkResult.MerchantRequestID);
 
-      return NextResponse.json(
-        { success: false, error: "Payment initiation failed. Please try again." },
-        { status: 502 }
-      );
-    }
-
-    if (stkResult.ResponseCode !== "0") {
-      return NextResponse.json(
-        { success: false, error: stkResult.ResponseDescription },
-        { status: 400 }
-      );
-    }
-
-    await createPendingPayment(stkResult.CheckoutRequestID, stkResult.MerchantRequestID);
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        checkoutRequestId: stkResult.CheckoutRequestID,
-        message: "STK Push sent. Check your phone to confirm payment.",
-      },
-    });
-  },
-  ["CUSTOMER", "ADMIN"]
-);
+  return NextResponse.json({
+    success: true,
+    data: {
+      checkoutRequestId: stkResult.CheckoutRequestID,
+      message: "STK Push sent. Check your phone to confirm payment.",
+    },
+  });
+}

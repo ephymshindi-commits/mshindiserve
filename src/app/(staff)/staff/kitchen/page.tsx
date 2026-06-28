@@ -7,13 +7,15 @@ import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { authApi, ordersApi } from "@/lib/api";
-import { capitalize, orderStatusColor, timeAgo } from "@/lib/utils";
+import { capitalize, formatKES, orderStatusColor, paymentStatusColor, timeAgo } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
 
 interface Order {
   id: string;
   orderNumber: string;
   status: string;
+  paymentStatus: string;
+  totalAmount: number;
   tableNumber?: string | null;
   createdAt: string;
   user: { name: string; phone?: string | null };
@@ -26,6 +28,10 @@ interface Order {
 
 const TRACK_STEPS = ["PENDING", "CONFIRMED", "PREPARING", "READY", "DELIVERED"];
 const KITCHEN_ORDERS_QUERY_KEY = ["kitchen-orders"] as const;
+
+function paymentLabel(status: string) {
+  return status === "COMPLETED" ? "Paid" : capitalize(status);
+}
 
 async function fetchKitchenOrders() {
   const res = await ordersApi.getAll({ status: "PENDING,CONFIRMED,PREPARING,READY" });
@@ -230,8 +236,13 @@ export default function KitchenPage() {
                           Table {order.tableNumber}
                         </span>
                       )}
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${paymentStatusColor(order.paymentStatus)}`}>
+                        {paymentLabel(order.paymentStatus)}
+                      </span>
                     </div>
-                    <p className="mt-1 text-xs text-zinc-500">{order.user.name}</p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {order.user.name} - {formatKES(order.totalAmount)}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${orderStatusColor(order.status)}`}>

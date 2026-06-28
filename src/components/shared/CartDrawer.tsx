@@ -2,14 +2,12 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { AlertCircle, CheckCircle2, Loader2, Minus, Plus, ShoppingBag, Smartphone, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { AuthModal } from "@/components/shared/AuthModal";
 import { usePaymentPoller } from "@/hooks/usePaymentPoller";
 import { ordersApi, paymentsApi } from "@/lib/api";
 import { formatKES } from "@/lib/utils";
 import { labelFromEnum } from "@/lib/visuals";
-import { useAuthStore } from "@/store/authStore";
 import { useCartStore } from "@/store/cartStore";
 
 type CheckoutStep = "cart" | "payment" | "success";
@@ -19,6 +17,7 @@ type ConfirmedOrder = {
   paymentStatus: "PENDING" | "COMPLETED" | "FAILED";
   mpesaRef?: string | null;
   message?: string;
+  tableNumber?: string | null;
 };
 
 export function CartDrawer() {
@@ -31,14 +30,15 @@ export function CartDrawer() {
     clearCart,
     totalAmount,
   } = useCartStore();
-  const { isAuthenticated } = useAuthStore();
 
   const [step, setStep] = useState<CheckoutStep>("cart");
   const [phone, setPhone] = useState("");
   const [phoneError, setPhoneError] = useState("");
+  const [tableNumber, setTableNumber] = useState("");
+  const [tableError, setTableError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isSimulating, setIsSimulating] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState<ConfirmedOrder | null>(null);
-  const [showAuth, setShowAuth] = useState(false);
 
   const total = totalAmount();
   const paymentPoller = usePaymentPoller({
@@ -59,11 +59,29 @@ export function CartDrawer() {
     },
   });
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get("table");
+    const saved = window.localStorage.getItem("ms-table-number");
+    const initial = (fromUrl || saved || "").trim().slice(0, 10);
+    if (initial) setTableNumber(initial);
+  }, []);
+
+  useEffect(() => {
+    const value = tableNumber.trim();
+    if (value) window.localStorage.setItem("ms-table-number", value);
+    else window.localStorage.removeItem("ms-table-number");
+  }, [tableNumber]);
+
   function handleCheckout() {
-    if (!isAuthenticated) {
-      setShowAuth(true);
+    const normalizedTable = tableNumber.trim();
+    if (!normalizedTable) {
+      setTableError("Enter a table number before checkout.");
       return;
     }
+
+    setTableNumber(normalizedTable);
+    setTableError("");
     setStep("payment");
   }
 
@@ -78,30 +96,72 @@ export function CartDrawer() {
     setIsLoading(true);
 
     try {
+      const normalizedTable = tableNumber.trim();
       const orderRes = await ordersApi.create({
         items: items.map((item) => ({
           menuItemId: item.menuItem.id,
           quantity: item.quantity,
           notes: item.notes,
         })),
+        tableNumber: normalizedTable,
       });
 
       const order = orderRes.data.data;
-      const paymentRes = await paymentsApi.stkPush({ phoneNumber: normalizedPhone, orderId: order.id });
-      const paymentMessage = paymentRes.data.data?.message;
-
       setConfirmedOrder({
         id: order.id,
         number: order.orderNumber,
         paymentStatus: "PENDING",
-        message: paymentMessage,
+        tableNumber: order.tableNumber ?? normalizedTable,
+        message: "Order created. Waiting for payment confirmation.",
       });
       setStep("success");
       clearCart();
+
+      try {
+        const paymentRes = await paymentsApi.stkPush({ phoneNumber: normalizedPhone, orderId: order.id });
+        const paymentMessage = paymentRes.data.data?.message;
+        setConfirmedOrder((current) =>
+          current ? { ...current, message: paymentMessage ?? current.message } : current
+        );
+      } catch (err: any) {
+        const message =
+          err?.response?.data?.error ??
+          "M-Pesa prompt could not be sent. Use the demo success button to continue.";
+        setConfirmedOrder((current) => (current ? { ...current, message } : current));
+        toast.error(message);
+      }
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? "Checkout failed. Please try again.");
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleSimulatePayment() {
+    if (!confirmedOrder) return;
+
+    setIsSimulating(true);
+    try {
+      const res = await paymentsApi.simulateOrder({
+        orderId: confirmedOrder.id,
+        phoneNumber: phone.replace(/\s/g, "") || undefined,
+      });
+      const data = res.data.data;
+      setConfirmedOrder((current) =>
+        current
+          ? {
+              ...current,
+              paymentStatus: "COMPLETED",
+              mpesaRef: data.mpesaRef,
+              message: "Demo payment confirmed. The kitchen has received this order.",
+            }
+          : current
+      );
+      toast.success("Demo payment confirmed");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? "Could not simulate payment.");
+    } finally {
+      setIsSimulating(false);
     }
   }
 
@@ -110,6 +170,7 @@ export function CartDrawer() {
     setStep("cart");
     setPhone("");
     setPhoneError("");
+    setTableError("");
     setConfirmedOrder(null);
   }
 
@@ -205,6 +266,21 @@ export function CartDrawer() {
 
                 {items.length > 0 && (
                   <div className="space-y-3 border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
+                    <label className="block">
+                      <span className="text-xs font-medium text-zinc-500">Table number</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={tableNumber}
+                        onChange={(e) => {
+                          setTableNumber(e.target.value.trim().slice(0, 10));
+                          setTableError("");
+                        }}
+                        placeholder="1"
+                        className="mt-1.5 h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:ring-2 focus:ring-amber-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                      />
+                      {tableError && <p className="mt-1 text-xs text-red-600">{tableError}</p>}
+                    </label>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-zinc-500">Subtotal</span>
                       <span className="font-semibold text-zinc-950 dark:text-white">
@@ -247,6 +323,12 @@ export function CartDrawer() {
                   <div className="mt-3 flex justify-between border-t border-zinc-200 pt-3 text-sm font-semibold dark:border-zinc-800">
                     <span>Total</span>
                     <span className="text-amber-700 dark:text-amber-400">{formatKES(total)}</span>
+                  </div>
+                  <div className="mt-2 flex justify-between text-sm">
+                    <span className="text-zinc-500">Table</span>
+                    <span className="font-semibold text-zinc-950 dark:text-white">
+                      {tableNumber.trim()}
+                    </span>
                   </div>
                 </div>
 
@@ -321,7 +403,7 @@ export function CartDrawer() {
                     ? "Your payment is confirmed and the kitchen has received your order."
                     : confirmedOrder?.paymentStatus === "FAILED"
                       ? confirmedOrder.message ?? "We could not confirm payment. Check your M-Pesa messages before trying again."
-                      : "Check your phone and enter your M-Pesa PIN. We will update this order as soon as confirmation arrives."}
+                      : confirmedOrder?.message ?? "Check your phone and enter your M-Pesa PIN. We will update this order as soon as confirmation arrives."}
                 </p>
 
                 {paymentPoller.isPolling && (
@@ -330,12 +412,31 @@ export function CartDrawer() {
                   </div>
                 )}
 
+                {confirmedOrder && confirmedOrder.paymentStatus !== "COMPLETED" && (
+                  <button
+                    onClick={handleSimulatePayment}
+                    disabled={isSimulating}
+                    className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-sm font-medium text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200"
+                  >
+                    {isSimulating ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                    Simulate Payment Success
+                  </button>
+                )}
+
                 {confirmedOrder && (
                   <div className="mt-6 w-full rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
                     <p className="text-xs text-zinc-500">Order number</p>
                     <p className="mt-1 font-mono text-lg font-semibold text-amber-700 dark:text-amber-400">
                       {confirmedOrder.number}
                     </p>
+                    {confirmedOrder.tableNumber && (
+                      <>
+                        <p className="mt-3 text-xs text-zinc-500">Table</p>
+                        <p className="mt-1 text-sm font-semibold text-zinc-950 dark:text-white">
+                          Table {confirmedOrder.tableNumber}
+                        </p>
+                      </>
+                    )}
                     {confirmedOrder.mpesaRef && (
                       <>
                         <p className="mt-3 text-xs text-zinc-500">M-Pesa reference</p>
@@ -358,15 +459,6 @@ export function CartDrawer() {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-
-      <AuthModal
-        open={showAuth}
-        onClose={() => setShowAuth(false)}
-        onSuccess={() => {
-          setShowAuth(false);
-          setStep("payment");
-        }}
-      />
     </>
   );
 }

@@ -6,13 +6,15 @@ import toast from "react-hot-toast";
 import { useState } from "react";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { ordersApi } from "@/lib/api";
-import { capitalize, formatKES, orderStatusColor } from "@/lib/utils";
+import { capitalize, formatKES, orderStatusColor, paymentStatusColor } from "@/lib/utils";
 
 interface Order {
   id: string;
   orderNumber: string;
   status: string;
+  paymentStatus: string;
   totalAmount: number;
+  tableNumber?: string | null;
   createdAt: string | Date;
   user: { name: string };
   orderItems: Array<{ quantity?: number; menuItem: { name: string } }>;
@@ -33,6 +35,10 @@ const STATUS_FLOW: Record<string, string | null> = {
 };
 
 const ADMIN_ORDERS_QUERY_KEY = ["admin-orders"] as const;
+
+function paymentLabel(status: string) {
+  return status === "COMPLETED" ? "Paid" : capitalize(status);
+}
 
 async function fetchAdminOrders() {
   const res = await fetch("/api/orders?limit=50", {
@@ -99,8 +105,10 @@ export function AdminOrdersTable({ orders: initial, compact = false }: Props) {
           <tr className="border-b border-zinc-200 bg-zinc-50 text-left dark:border-zinc-800 dark:bg-zinc-950">
             <th className="px-4 py-3 text-xs font-medium text-zinc-500">Order</th>
             <th className="px-4 py-3 text-xs font-medium text-zinc-500">Customer</th>
+            <th className="px-4 py-3 text-xs font-medium text-zinc-500">Table</th>
             {!compact && <th className="px-4 py-3 text-xs font-medium text-zinc-500">Items</th>}
             <th className="px-4 py-3 text-xs font-medium text-zinc-500">Total</th>
+            <th className="px-4 py-3 text-xs font-medium text-zinc-500">Payment</th>
             <th className="px-4 py-3 text-xs font-medium text-zinc-500">Status</th>
             <th className="px-4 py-3 text-xs font-medium text-zinc-500">Action</th>
           </tr>
@@ -122,6 +130,9 @@ export function AdminOrdersTable({ orders: initial, compact = false }: Props) {
                   )}
                 </td>
                 <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">{order.user.name}</td>
+                <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">
+                  {order.tableNumber ? `Table ${order.tableNumber}` : "Takeaway"}
+                </td>
                 {!compact && (
                   <td className="max-w-xs px-4 py-3 text-zinc-600 dark:text-zinc-400">
                     {order.orderItems
@@ -133,6 +144,11 @@ export function AdminOrdersTable({ orders: initial, compact = false }: Props) {
                 )}
                 <td className="px-4 py-3 font-medium text-amber-700 dark:text-amber-400">
                   {formatKES(order.totalAmount)}
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${paymentStatusColor(order.paymentStatus)}`}>
+                    {paymentLabel(order.paymentStatus)}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${orderStatusColor(order.status)}`}>

@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { withAuth, rateLimit, logActivity } from "@/lib/middleware";
 import type { AuthenticatedRequest } from "@/lib/middleware";
 import { menuSeedData } from "@/lib/fallback-data";
+import { getOptionalAuth, getOrCreateGuestUser } from "@/lib/guest-checkout";
 
 const limiter = rateLimit(60_000, 30);
 
@@ -97,87 +98,94 @@ function newOrderNumber() {
   return `MS-${datePart}-${rand}`;
 }
 
-export const POST = withAuth(
-  async (req: AuthenticatedRequest) => {
-    const limited = limiter(req);
-    if (limited) return limited;
+export async function POST(req: NextRequest) {
+  const limited = limiter(req);
+  if (limited) return limited;
 
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ success: false, error: "Invalid JSON" }, { status: 400 });
-    }
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ success: false, error: "Invalid JSON" }, { status: 400 });
+  }
 
-    const parsed = createOrderSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: parsed.error.errors[0].message },
-        { status: 422 }
-      );
-    }
+  const parsed = createOrderSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0].message },
+      { status: 422 }
+    );
+  }
 
-    const { items, tableNumber, isDelivery, deliveryAddr, notes } = parsed.data;
-    const menuItemIds = Array.from(new Set(items.map((item) => item.menuItemId)));
+  const authUser = await getOptionalAuth(req);
+  const guestUser = authUser ? null : await getOrCreateGuestUser();
+  const userId = authUser?.sub ?? guestUser!.id;
 
-    let menuItems = await prisma.menuItem.findMany({
+  const { items, tableNumber, isDelivery, deliveryAddr, notes } = parsed.data;
+  const menuItemIds = Array.from(new Set(items.map((item) => item.menuItemId)));
+
+  let menuItems = await prisma.menuItem.findMany({
+    where: { id: { in: menuItemIds }, isAvailable: true },
+  });
+
+  if (menuItems.length !== menuItemIds.length) {
+    await prisma.menuItem.createMany({ data: menuSeedData(), skipDuplicates: true });
+    menuItems = await prisma.menuItem.findMany({
       where: { id: { in: menuItemIds }, isAvailable: true },
     });
+  }
 
-    if (menuItems.length !== menuItemIds.length) {
-      await prisma.menuItem.createMany({ data: menuSeedData(), skipDuplicates: true });
-      menuItems = await prisma.menuItem.findMany({
-        where: { id: { in: menuItemIds }, isAvailable: true },
-      });
-    }
+  if (menuItems.length !== menuItemIds.length) {
+    return NextResponse.json(
+      { success: false, error: "One or more menu items are unavailable" },
+      { status: 400 }
+    );
+  }
 
-    if (menuItems.length !== menuItemIds.length) {
-      return NextResponse.json(
-        { success: false, error: "One or more menu items are unavailable" },
-        { status: 400 }
-      );
-    }
+  const menuMap = new Map(menuItems.map((item) => [item.id, item]));
+  const totalAmount = items.reduce((sum, item) => {
+    const menuItem = menuMap.get(item.menuItemId);
+    return sum + (menuItem?.price ?? 0) * item.quantity;
+  }, 0);
 
-    const menuMap = new Map(menuItems.map((item) => [item.id, item]));
-    const totalAmount = items.reduce((sum, item) => {
-      const menuItem = menuMap.get(item.menuItemId);
-      return sum + (menuItem?.price ?? 0) * item.quantity;
-    }, 0);
-
-    const order = await prisma.order.create({
-      data: {
-        orderNumber: newOrderNumber(),
-        userId: req.user.sub,
-        totalAmount,
-        tableNumber,
-        isDelivery,
-        deliveryAddr,
-        notes,
-        status: "PENDING",
-        orderItems: {
-          create: items.map((item) => ({
-            menuItemId: item.menuItemId,
-            quantity: item.quantity,
-            unitPrice: menuMap.get(item.menuItemId)!.price,
-            notes: item.notes,
-          })),
-        },
+  const order = await prisma.order.create({
+    data: {
+      orderNumber: newOrderNumber(),
+      userId,
+      totalAmount,
+      tableNumber,
+      isDelivery,
+      deliveryAddr,
+      notes,
+      status: "PENDING",
+      orderItems: {
+        create: items.map((item) => ({
+          menuItemId: item.menuItemId,
+          quantity: item.quantity,
+          unitPrice: menuMap.get(item.menuItemId)!.price,
+          notes: item.notes,
+        })),
       },
-      include: {
-        orderItems: { include: { menuItem: true } },
-      },
-    });
+    },
+    include: {
+      orderItems: { include: { menuItem: true } },
+    },
+  });
 
-    await logActivity({
-      userId: req.user.sub,
-      action: "CREATE_ORDER",
-      resource: "orders",
-      resourceId: order.id,
-      details: { orderNumber: order.orderNumber, totalAmount, itemCount: items.length },
-      req,
-    });
+  await logActivity({
+    userId,
+    action: "CREATE_ORDER",
+    resource: "orders",
+    resourceId: order.id,
+    details: {
+      orderNumber: order.orderNumber,
+      totalAmount,
+      itemCount: items.length,
+      checkoutMode: authUser ? "authenticated" : "guest",
+      tableNumber,
+    },
+    req,
+  });
 
-    return NextResponse.json({ success: true, data: order }, { status: 201 });
-  },
-  ["CUSTOMER", "ADMIN"]
-);
+  return NextResponse.json({ success: true, data: order }, { status: 201 });
+}

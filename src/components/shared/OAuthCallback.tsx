@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { authApi } from "@/lib/api";
+import { normalizeRole, resolvePostAuthRedirect } from "@/lib/role-redirect";
 import { getSupabaseBrowserClient } from "@/lib/supabase-client";
 import { useAuthStore } from "@/store/authStore";
 
@@ -73,7 +74,7 @@ export function OAuthCallback() {
 
         setAuth(user, accessToken);
         toast.success(`Welcome, ${user.name.split(" ")[0]}`);
-        router.replace(next);
+        router.replace(resolvePostAuthRedirect(normalizeRole(user.role), next));
       } catch (err) {
         const message = errorMessage(err);
         setError(message);

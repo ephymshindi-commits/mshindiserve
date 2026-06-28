@@ -40,6 +40,7 @@ const createLiquorItemSchema = z.object({
   bottleSizeMl: z.coerce.number().int().positive(),
   costPrice: moneySchema,
   retailPrice: moneySchema,
+  imageUrl: z.string().url().optional().nullable(),
   currentStock: z.coerce.number().nonnegative().default(0),
   lowStockThreshold: z.coerce.number().nonnegative().default(5),
   status: z.enum(itemStatuses).default("ACTIVE"),

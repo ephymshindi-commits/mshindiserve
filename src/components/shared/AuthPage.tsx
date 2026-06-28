@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { AuthModal } from "@/components/shared/AuthModal";
+import { normalizeRole, resolvePostAuthRedirect } from "@/lib/role-redirect";
 import type { User } from "@/types";
 
 export function AuthPage({ defaultTab }: { defaultTab: "login" | "register" }) {
@@ -20,13 +21,14 @@ export function AuthPage({ defaultTab }: { defaultTab: "login" | "register" }) {
 
   function success(user: User) {
     setOpen(false);
-    if (next.startsWith("/admin") && user.role !== "ADMIN") {
+    const role = normalizeRole(user.role);
+    if (next.startsWith("/admin") && role !== "ADMIN") {
       toast.error("That account is not allowed to access the admin panel.");
-      router.replace("/");
+      router.replace(resolvePostAuthRedirect(role));
       return;
     }
 
-    router.replace(next);
+    router.replace(resolvePostAuthRedirect(role, next));
   }
 
   return (

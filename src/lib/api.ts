@@ -1,5 +1,6 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { useAuthStore } from "@/store/authStore";
+import type { Role } from "@/types";
 
 const api = axios.create({
   baseURL: "/api",
@@ -88,7 +89,14 @@ export const authApi = {
   login: (email: string, password: string) =>
     api.post("/auth/login", { email, password }),
   oauth: (data: { accessToken: string }) => api.post("/auth/oauth", data),
-  register: (data: { name: string; email: string; phone?: string; password: string }) =>
+  register: (data: {
+    name: string;
+    email: string;
+    phone?: string;
+    password: string;
+    adminCreate?: boolean;
+    role?: Role;
+  }) =>
     api.post("/auth/register", data),
   me: () => api.get("/auth/me"),
   logout: () => api.post("/auth/logout"),

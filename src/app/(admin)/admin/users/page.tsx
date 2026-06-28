@@ -7,6 +7,7 @@ import { Loader2, Plus, RefreshCcw, Search, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { AdminSectionHeader } from "@/components/admin/AdminSectionHeader";
+import { authApi } from "@/lib/api";
 import { labelFromEnum } from "@/lib/visuals";
 import type { ApiResponse, Role } from "@/types";
 
@@ -326,29 +327,20 @@ function AddUserModal({
     setApiError(null);
 
     try {
-      const res = await fetch("/api/auth/register", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          adminCreate: true,
-          name: form.name.trim(),
-          email: form.email.trim().toLowerCase(),
-          phone: form.phone.trim() || undefined,
-          password: form.password,
-          role: form.role,
-        }),
+      await authApi.register({
+        adminCreate: true,
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim() || undefined,
+        password: form.password,
+        role: form.role,
       });
-      const data = await readJson<{ user: AdminUser }>(res);
-      if (!res.ok || !data.success) {
-        throw new Error(data.error ?? "Could not create user.");
-      }
 
       toast.success("User created.");
       onSuccess();
       onOpenChange(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not create user.";
+    } catch (error: any) {
+      const message = error?.response?.data?.error ?? "Could not create user.";
       setApiError(message);
       toast.error(message);
     } finally {

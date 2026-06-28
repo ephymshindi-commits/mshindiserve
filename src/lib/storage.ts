@@ -1,7 +1,7 @@
 "use client";
 
 export const BUCKET = "mshindiserve-assets";
-export type ImageFolder = "menu" | "events" | "rooms" | "logos";
+export type ImageFolder = "menu" | "events" | "rooms" | "logos" | "gallery" | "liquor";
 
 function publicStorageBase() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

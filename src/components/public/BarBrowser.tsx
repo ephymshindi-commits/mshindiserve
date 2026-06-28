@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2, RefreshCw, Wine } from "lucide-react";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ type LiquorItem = {
   category: LiquorCategory;
   bottleSizeMl: number;
   retailPrice: string;
+  imageUrl: string | null;
   currentStock: number;
   lowStockThreshold: number;
   status: "ACTIVE" | "INACTIVE";
@@ -155,33 +157,51 @@ export function BarBrowser() {
             return (
               <article
                 key={item.id}
-                className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-amber-300 dark:border-zinc-800 dark:bg-zinc-900"
+                className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-amber-300 dark:border-zinc-800 dark:bg-zinc-900"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400">
-                      {label(item.category)}
-                    </p>
-                    <h2 className="mt-2 text-base font-semibold text-zinc-950 dark:text-white">
-                      {item.name}
-                    </h2>
-                    <p className="mt-1 text-sm text-zinc-500">{item.bottleSizeMl}ml bottle</p>
-                  </div>
-                  <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", status.className)}>
+                <div className="relative h-44 bg-zinc-100 dark:bg-zinc-800">
+                  {item.imageUrl ? (
+                    <Image
+                      src={item.imageUrl}
+                      alt={item.name}
+                      fill
+                      sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-zinc-300">
+                      <Wine size={34} />
+                    </div>
+                  )}
+                  <span className={cn("absolute right-3 top-3 rounded-full px-2.5 py-1 text-xs font-medium", status.className)}>
                     {status.label}
                   </span>
                 </div>
 
-                <div className="mt-5 flex items-end justify-between gap-4">
-                  <div>
-                    <p className="text-xs text-zinc-500">From</p>
-                    <p className="text-lg font-semibold text-zinc-950 dark:text-white">
-                      {money(item.retailPrice)}
+                <div className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400">
+                        {label(item.category)}
+                      </p>
+                      <h2 className="mt-2 text-base font-semibold text-zinc-950 dark:text-white">
+                        {item.name}
+                      </h2>
+                      <p className="mt-1 text-sm text-zinc-500">{item.bottleSizeMl}ml bottle</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex items-end justify-between gap-4">
+                    <div>
+                      <p className="text-xs text-zinc-500">From</p>
+                      <p className="text-lg font-semibold text-zinc-950 dark:text-white">
+                        {money(item.retailPrice)}
+                      </p>
+                    </div>
+                    <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:bg-zinc-950">
+                      Ask at bar or restaurant
                     </p>
                   </div>
-                  <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:bg-zinc-950">
-                    Ask at bar or restaurant
-                  </p>
                 </div>
               </article>
             );

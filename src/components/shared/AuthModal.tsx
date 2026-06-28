@@ -2,9 +2,11 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { Chrome, Eye, EyeOff, Loader2, Lock, UserPlus, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { authApi } from "@/lib/api";
+import { normalizeRole, resolvePostAuthRedirect } from "@/lib/role-redirect";
 import { getSupabaseBrowserClient } from "@/lib/supabase-client";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
@@ -63,6 +65,7 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
   const [submitting, setSubmitting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const { setAuth } = useAuthStore();
+  const router = useRouter();
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -112,10 +115,12 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
     try {
       const res = await authApi.login(loginEmail.trim(), loginPassword);
       const { user, accessToken } = res.data.data;
+      const role = normalizeRole(user.role);
       setAuth(user, accessToken);
       toast.success(`Welcome back, ${user.name.split(" ")[0]}`, { id: toastId });
       resetAll();
-      onSuccess?.(user);
+      if (onSuccess) onSuccess(user);
+      else router.replace(resolvePostAuthRedirect(role));
       onClose();
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? "Sign in failed", { id: toastId });
@@ -145,10 +150,12 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
         password: regPassword,
       });
       const { user, accessToken } = res.data.data;
+      const role = normalizeRole(user.role);
       setAuth(user, accessToken);
       toast.success(`Welcome, ${user.name.split(" ")[0]}`, { id: toastId });
       resetAll();
-      onSuccess?.(user);
+      if (onSuccess) onSuccess(user);
+      else router.replace(resolvePostAuthRedirect(role));
       onClose();
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? "Registration failed", { id: toastId });

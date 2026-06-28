@@ -1,8 +1,11 @@
 "use client";
 
 import { AlertTriangle, ClipboardCheck, Loader2, Plus, RefreshCw, Wine } from "lucide-react";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
+import { ImageUpload } from "@/components/admin/ImageUpload";
+import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type LiquorCategory =
@@ -44,6 +47,7 @@ type LiquorItem = {
   bottleSizeMl: number;
   costPrice: string;
   retailPrice: string;
+  imageUrl: string | null;
   currentStock: number;
   lowStockThreshold: number;
   status: LiquorItemStatus;
@@ -115,6 +119,8 @@ export function LiquorAdminClient() {
   const [refreshing, setRefreshing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
+  const [photoItemId, setPhotoItemId] = useState("");
+  const [savingPhoto, setSavingPhoto] = useState(false);
 
   const [newItem, setNewItem] = useState({
     sku: "",
@@ -123,6 +129,7 @@ export function LiquorAdminClient() {
     bottleSizeMl: 500,
     costPrice: 0,
     retailPrice: 0,
+    imageUrl: "",
     currentStock: 0,
     lowStockThreshold: 5,
     status: "ACTIVE" as LiquorItemStatus,
@@ -154,6 +161,7 @@ export function LiquorAdminClient() {
         ...current,
         itemId: current.itemId || loadedItems[0]?.id || "",
       }));
+      setPhotoItemId((current) => current || loadedItems[0]?.id || "");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not load liquor inventory.");
     } finally {
@@ -177,7 +185,10 @@ export function LiquorAdminClient() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(newItem),
+        body: JSON.stringify({
+          ...newItem,
+          imageUrl: newItem.imageUrl || undefined,
+        }),
       });
       const payload = await res.json();
       if (!res.ok || !payload.success) throw new Error(payload.error ?? "Could not create liquor item.");
@@ -190,6 +201,7 @@ export function LiquorAdminClient() {
         bottleSizeMl: 500,
         costPrice: 0,
         retailPrice: 0,
+        imageUrl: "",
         currentStock: 0,
         lowStockThreshold: 5,
         status: "ACTIVE",
@@ -233,6 +245,23 @@ export function LiquorAdminClient() {
     }
   }
 
+  async function updateItemPhoto(itemId: string, imageUrl: string | null) {
+    setSavingPhoto(true);
+    try {
+      const res = await api.patch(`/admin/liquor/${itemId}`, { imageUrl });
+      if (!res.data?.success) {
+        throw new Error(res.data?.error ?? "Could not update drink photo.");
+      }
+
+      toast.success(imageUrl ? "Drink photo updated." : "Drink photo removed.");
+      await loadItems(true);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error ?? "Could not update drink photo.");
+    } finally {
+      setSavingPhoto(false);
+    }
+  }
+
   const stats = useMemo(() => {
     const activeItems = items.filter((item) => item.status === "ACTIVE");
     return {
@@ -245,6 +274,8 @@ export function LiquorAdminClient() {
       ),
     };
   }, [items]);
+
+  const selectedPhotoItem = items.find((item) => item.id === photoItemId) ?? items[0] ?? null;
 
   return (
     <div className="space-y-6">
@@ -447,6 +478,18 @@ export function LiquorAdminClient() {
             </h2>
           </div>
 
+          <div className="mb-4">
+            <Field label="Drink photo">
+              <ImageUpload
+                folder="liquor"
+                currentImageUrl={newItem.imageUrl || null}
+                onUpload={(url) => setNewItem((current) => ({ ...current, imageUrl: url }))}
+                onRemove={() => setNewItem((current) => ({ ...current, imageUrl: "" }))}
+                disabled={creating}
+              />
+            </Field>
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="SKU">
               <input
@@ -546,6 +589,42 @@ export function LiquorAdminClient() {
         </form>
       </div>
 
+      {selectedPhotoItem && (
+        <div className="grid gap-4 lg:grid-cols-[0.75fr_1.25fr]">
+          <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="text-sm font-semibold text-zinc-950 dark:text-white">Update existing drink photo</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Select a saved SKU and upload a clean bottle or serving photo for the public bar menu.
+            </p>
+            <div className="mt-4">
+              <Field label="Liquor item">
+                <select
+                  value={selectedPhotoItem.id}
+                  onChange={(event) => setPhotoItemId(event.target.value)}
+                  className={inputClass}
+                  disabled={savingPhoto}
+                >
+                  {items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} ({item.sku})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+            <ImageUpload
+              folder="liquor"
+              currentImageUrl={selectedPhotoItem.imageUrl}
+              onUpload={(url) => updateItemPhoto(selectedPhotoItem.id, url)}
+              onRemove={() => updateItemPhoto(selectedPhotoItem.id, null)}
+              disabled={savingPhoto}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
           <div>
@@ -607,8 +686,25 @@ export function LiquorAdminClient() {
                         {item.sku}
                       </td>
                       <td className="px-4 py-3">
-                        <p className="font-medium text-zinc-950 dark:text-white">{item.name}</p>
-                        <p className="mt-0.5 text-xs text-zinc-500">{label(item.status)}</p>
+                        <div className="flex items-center gap-3">
+                          <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-zinc-100 text-zinc-400 dark:bg-zinc-800">
+                            {item.imageUrl ? (
+                              <Image
+                                src={item.imageUrl}
+                                alt={item.name}
+                                fill
+                                sizes="44px"
+                                className="object-cover"
+                              />
+                            ) : (
+                              <Wine size={18} />
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-medium text-zinc-950 dark:text-white">{item.name}</p>
+                            <p className="mt-0.5 text-xs text-zinc-500">{label(item.status)}</p>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">{label(item.category)}</td>
                       <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">{item.bottleSizeMl}ml</td>

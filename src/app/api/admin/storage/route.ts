@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const BUCKET = "mshindiserve-assets";
-const PATH_PATTERN = /^(menu|events|rooms|logos)\/[0-9]+-[0-9a-f-]+\.webp$/i;
+const PATH_PATTERN = /^(menu|events|rooms|logos|gallery|liquor)\/[0-9]+-[0-9a-f-]+\.webp$/i;
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 function getSupabaseAdmin() {

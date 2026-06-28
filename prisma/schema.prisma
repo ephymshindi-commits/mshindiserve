@@ -153,6 +153,7 @@ model LiquorItem {
   bottleSizeMl      Int
   costPrice         Decimal          @db.Decimal(12, 2)
   retailPrice       Decimal          @db.Decimal(12, 2)
+  imageUrl          String?
   currentStock      Float            @default(0)
   lowStockThreshold Float            @default(5)
   status            LiquorItemStatus @default(ACTIVE)
@@ -343,6 +344,21 @@ model ActivityLog {
   user User? @relation(fields: [userId], references: [id])
 
   @@map("activity_logs")
+}
+
+model GalleryImage {
+  id          String   @id @default(cuid())
+  title       String
+  caption     String?
+  imageUrl    String
+  category    String?  @default("General")
+  isPublished Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPublished, sortOrder])
+  @@map("gallery_images")
 }
 
 model TenantConfig {

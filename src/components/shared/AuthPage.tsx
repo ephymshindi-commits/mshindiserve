@@ -13,6 +13,7 @@ export function AuthPage({ defaultTab }: { defaultTab: "login" | "register" }) {
   const [open, setOpen] = useState(true);
   const rawNext = searchParams.get("next");
   const next = rawNext?.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
+  const isTeamAccess = next.startsWith("/admin") || next.startsWith("/staff");
 
   function leave() {
     setOpen(false);
@@ -39,16 +40,24 @@ export function AuthPage({ defaultTab }: { defaultTab: "login" | "register" }) {
             Secure access
           </p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight text-zinc-950 md:text-5xl dark:text-white">
-            Sign in to continue
+            {isTeamAccess ? "Team sign in" : "Sign in to continue"}
           </h1>
           <p className="mt-4 text-base leading-7 text-zinc-600 dark:text-zinc-400">
-            Your account keeps food orders, room bookings, and event tickets tied to the right
-            guest or team member.
+            {isTeamAccess
+              ? "Use the staff account created by the administrator to open your workspace."
+              : "Your account keeps food orders, room bookings, and event tickets tied to the right guest."}
           </p>
         </div>
       </section>
 
-      <AuthModal open={open} onClose={leave} onSuccess={success} defaultTab={defaultTab} />
+      <AuthModal
+        open={open}
+        onClose={leave}
+        onSuccess={success}
+        defaultTab={defaultTab}
+        allowRegister={!isTeamAccess}
+        allowGoogle={!isTeamAccess}
+      />
     </div>
   );
 }

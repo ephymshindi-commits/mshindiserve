@@ -53,7 +53,7 @@ export function createRateLimit(requests: number, window: Duration): RateLimit |
   };
 }
 
-export const loginLimiter = createRateLimit(5, "15m");
+export const loginLimiter = createRateLimit(20, "10m");
 export const registerLimiter = createRateLimit(3, "1h");
 export const ticketLimiter = createRateLimit(10, "1m");
 export const mpesaLimiter = createRateLimit(3, "5m");

@@ -31,7 +31,7 @@ const NEXT_STATUS: Record<string, string | null> = {
 };
 
 export default function ReceptionPage() {
-  const { user, isAuthenticated, setUser } = useAuthStore();
+  const { user, setUser } = useAuthStore();
   const router = useRouter();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [checking, setChecking] = useState(true);
@@ -43,16 +43,12 @@ export default function ReceptionPage() {
 
     async function verifyStaff() {
       try {
-        let role = user?.role;
-        if (!isAuthenticated || !user) {
-          const res = await authApi.me();
-          const sessionUser = res.data.data.user;
-          if (cancelled) return;
-          setUser(sessionUser);
-          role = sessionUser.role;
-        }
+        const res = await authApi.me();
+        const sessionUser = res.data.data.user;
+        if (cancelled) return;
+        setUser(sessionUser);
 
-        if (!["RECEPTION", "ADMIN"].includes(role ?? "")) {
+        if (!["RECEPTION", "ADMIN"].includes(sessionUser.role ?? "")) {
           router.replace("/");
           return;
         }
@@ -69,7 +65,7 @@ export default function ReceptionPage() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, router, setUser, user]);
+  }, [router, setUser]);
 
   async function fetchBookings() {
     try {

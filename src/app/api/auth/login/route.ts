@@ -86,9 +86,6 @@ async function findLoginUser(email: string): Promise<{ user: LoginUser | null; l
 }
 
 export async function POST(req: NextRequest) {
-  const limited = await loginLimiter?.check(clientIp(req));
-  if (limited) return limited;
-
   let body: unknown;
   try {
     body = await req.json();
@@ -103,6 +100,11 @@ export async function POST(req: NextRequest) {
       { status: 422 }
     );
   }
+
+  const limited = await loginLimiter?.check(
+    `${clientIp(req)}:${parsed.data.email.toLowerCase()}`
+  );
+  if (limited) return limited;
 
   try {
     const { email, password } = parsed.data;

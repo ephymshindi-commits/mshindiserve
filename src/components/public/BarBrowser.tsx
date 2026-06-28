@@ -40,12 +40,141 @@ const categories: Array<"ALL" | LiquorCategory> = [
   "WHISKEY",
   "VODKA",
   "GIN",
+  "CIDER",
   "RUM",
   "BRANDY",
   "LIQUEUR",
   "CHAMPAGNE",
   "OTHER",
 ];
+
+const fallbackBarItems: LiquorItem[] = [
+  {
+    id: "fallback-tusker-lager",
+    sku: "BAR-FALLBACK-001",
+    name: "Tusker Lager",
+    category: "BEER",
+    bottleSizeMl: 500,
+    retailPrice: "350",
+    imageUrl: "https://images.unsplash.com/photo-1608270586620-248524c67de9?auto=format&fit=crop&w=900&q=80",
+    currentStock: 36,
+    lowStockThreshold: 8,
+    status: "ACTIVE",
+  },
+  {
+    id: "fallback-guinness",
+    sku: "BAR-FALLBACK-002",
+    name: "Guinness Stout",
+    category: "BEER",
+    bottleSizeMl: 500,
+    retailPrice: "450",
+    imageUrl: "https://images.unsplash.com/photo-1584225064785-c62a8b43d148?auto=format&fit=crop&w=900&q=80",
+    currentStock: 24,
+    lowStockThreshold: 6,
+    status: "ACTIVE",
+  },
+  {
+    id: "fallback-savana",
+    sku: "BAR-FALLBACK-003",
+    name: "Savanna Dry Cider",
+    category: "CIDER",
+    bottleSizeMl: 330,
+    retailPrice: "500",
+    imageUrl: "https://images.unsplash.com/photo-1595981267035-7b04ca84a82d?auto=format&fit=crop&w=900&q=80",
+    currentStock: 18,
+    lowStockThreshold: 5,
+    status: "ACTIVE",
+  },
+  {
+    id: "fallback-house-red",
+    sku: "BAR-FALLBACK-004",
+    name: "House Red Wine",
+    category: "WINE",
+    bottleSizeMl: 175,
+    retailPrice: "850",
+    imageUrl: "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=900&q=80",
+    currentStock: 14,
+    lowStockThreshold: 4,
+    status: "ACTIVE",
+  },
+  {
+    id: "fallback-house-white",
+    sku: "BAR-FALLBACK-005",
+    name: "Crisp House White",
+    category: "WINE",
+    bottleSizeMl: 175,
+    retailPrice: "850",
+    imageUrl: "https://images.unsplash.com/photo-1553361371-9b22f78e8b1d?auto=format&fit=crop&w=900&q=80",
+    currentStock: 12,
+    lowStockThreshold: 4,
+    status: "ACTIVE",
+  },
+  {
+    id: "fallback-jameson",
+    sku: "BAR-FALLBACK-006",
+    name: "Jameson Irish Whiskey",
+    category: "WHISKEY",
+    bottleSizeMl: 35,
+    retailPrice: "800",
+    imageUrl: "https://images.unsplash.com/photo-1527281400683-1aae777175f8?auto=format&fit=crop&w=900&q=80",
+    currentStock: 22,
+    lowStockThreshold: 6,
+    status: "ACTIVE",
+  },
+  {
+    id: "fallback-jw-black",
+    sku: "BAR-FALLBACK-007",
+    name: "Johnnie Walker Black Label",
+    category: "WHISKEY",
+    bottleSizeMl: 35,
+    retailPrice: "950",
+    imageUrl: "https://images.unsplash.com/photo-1569529465841-dfecdab7503b?auto=format&fit=crop&w=900&q=80",
+    currentStock: 15,
+    lowStockThreshold: 5,
+    status: "ACTIVE",
+  },
+  {
+    id: "fallback-gilbeys",
+    sku: "BAR-FALLBACK-008",
+    name: "Gilbey's Gin",
+    category: "GIN",
+    bottleSizeMl: 35,
+    retailPrice: "550",
+    imageUrl: "https://images.unsplash.com/photo-1551538827-9c037cb4f32a?auto=format&fit=crop&w=900&q=80",
+    currentStock: 20,
+    lowStockThreshold: 5,
+    status: "ACTIVE",
+  },
+  {
+    id: "fallback-mojito",
+    sku: "BAR-FALLBACK-009",
+    name: "Classic Mojito",
+    category: "RUM",
+    bottleSizeMl: 300,
+    retailPrice: "1100",
+    imageUrl: "https://images.unsplash.com/photo-1551782450-a2132b4ba21d?auto=format&fit=crop&w=900&q=80",
+    currentStock: 16,
+    lowStockThreshold: 4,
+    status: "ACTIVE",
+  },
+  {
+    id: "fallback-dawa",
+    sku: "BAR-FALLBACK-010",
+    name: "Dawa Cocktail",
+    category: "VODKA",
+    bottleSizeMl: 300,
+    retailPrice: "950",
+    imageUrl: "https://images.unsplash.com/photo-1544145945-f90425340c7e?auto=format&fit=crop&w=900&q=80",
+    currentStock: 18,
+    lowStockThreshold: 4,
+    status: "ACTIVE",
+  },
+];
+
+function fallbackItemsFor(nextCategory: "ALL" | LiquorCategory) {
+  if (nextCategory === "ALL") return fallbackBarItems;
+  return fallbackBarItems.filter((item) => item.category === nextCategory);
+}
 
 function label(value: string) {
   return value
@@ -82,8 +211,10 @@ export function BarBrowser() {
       const res = await fetch(`/api/liquor${params}`, { cache: "no-store" });
       const payload = await res.json();
       if (!res.ok || !payload.success) throw new Error(payload.error ?? "Could not load bar menu.");
-      setItems(payload.data);
+      const data = (payload.data ?? []) as LiquorItem[];
+      setItems(data.length > 0 ? data : fallbackItemsFor(nextCategory));
     } catch (error) {
+      setItems(fallbackItemsFor(nextCategory));
       if (!quiet) {
         toast.error(error instanceof Error ? error.message : "Could not load bar menu.");
       }
@@ -187,7 +318,11 @@ export function BarBrowser() {
                       <h2 className="mt-2 text-base font-semibold text-zinc-950 dark:text-white">
                         {item.name}
                       </h2>
-                      <p className="mt-1 text-sm text-zinc-500">{item.bottleSizeMl}ml bottle</p>
+                      <p className="mt-1 text-sm text-zinc-500">
+                        {item.bottleSizeMl >= 100
+                          ? `${item.bottleSizeMl}ml bottle`
+                          : `${item.bottleSizeMl}ml pour`}
+                      </p>
                     </div>
                   </div>
 

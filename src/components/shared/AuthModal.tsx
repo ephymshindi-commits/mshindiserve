@@ -17,6 +17,8 @@ interface AuthModalProps {
   onClose: () => void;
   onSuccess?: (user: User) => void;
   defaultTab?: "login" | "register";
+  allowRegister?: boolean;
+  allowGoogle?: boolean;
 }
 
 function validateLogin(email: string, password: string) {
@@ -59,8 +61,16 @@ function safeNextPath() {
   return currentPath;
 }
 
-export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: AuthModalProps) {
+export function AuthModal({
+  open,
+  onClose,
+  onSuccess,
+  defaultTab = "login",
+  allowRegister = true,
+  allowGoogle = true,
+}: AuthModalProps) {
   const [tab, setTab] = useState<"login" | "register">(defaultTab);
+  const activeTab = allowRegister ? tab : "login";
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -78,8 +88,8 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
   const [regErrors, setRegErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (open) setTab(defaultTab);
-  }, [defaultTab, open]);
+    if (open) setTab(allowRegister ? defaultTab : "login");
+  }, [allowRegister, defaultTab, open]);
 
   function resetAll() {
     setLoginEmail("");
@@ -131,6 +141,8 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
+    if (!allowRegister) return;
+
     const normalizedPhone = regPhone.replace(/\s/g, "");
     const errors = validateRegister(regName, regPhone, regEmail.trim(), regPassword);
     if (Object.keys(errors).length > 0) {
@@ -207,7 +219,7 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
                 Welcome to MshindiServe
               </Dialog.Title>
               <Dialog.Description className="mt-1 text-sm text-zinc-500">
-                {tab === "login" ? "Sign in to continue" : "Create your guest account"}
+                {activeTab === "login" ? "Sign in to continue" : "Create your guest account"}
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
@@ -217,44 +229,50 @@ export function AuthModal({ open, onClose, onSuccess, defaultTab = "login" }: Au
             </Dialog.Close>
           </div>
 
-          <div className="mb-6 grid grid-cols-2 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
-            {(["login", "register"] as const).map((value) => (
+          {allowRegister && (
+            <div className="mb-6 grid grid-cols-2 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
+              {(["login", "register"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    setTab(value);
+                    setShowPassword(false);
+                  }}
+                  className={cn(
+                    "h-9 rounded-md text-sm font-medium transition",
+                    activeTab === value
+                      ? "bg-white text-zinc-950 shadow-sm dark:bg-zinc-700 dark:text-white"
+                      : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                  )}
+                >
+                  {value === "login" ? "Sign in" : "Register"}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {allowGoogle && (
+            <>
               <button
-                key={value}
                 type="button"
-                onClick={() => {
-                  setTab(value);
-                  setShowPassword(false);
-                }}
-                className={cn(
-                  "h-9 rounded-md text-sm font-medium transition",
-                  tab === value
-                    ? "bg-white text-zinc-950 shadow-sm dark:bg-zinc-700 dark:text-white"
-                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-                )}
+                onClick={handleGoogleSignIn}
+                disabled={submitting || googleLoading}
+                className="mb-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white text-sm font-medium text-zinc-900 transition hover:border-amber-400 hover:bg-amber-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:hover:border-amber-500 dark:hover:bg-zinc-800"
               >
-                {value === "login" ? "Sign in" : "Register"}
+                {googleLoading ? <Loader2 size={16} className="animate-spin" /> : <Chrome size={16} />}
+                Continue with Google
               </button>
-            ))}
-          </div>
 
-          <button
-            type="button"
-            onClick={handleGoogleSignIn}
-            disabled={submitting || googleLoading}
-            className="mb-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white text-sm font-medium text-zinc-900 transition hover:border-amber-400 hover:bg-amber-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:hover:border-amber-500 dark:hover:bg-zinc-800"
-          >
-            {googleLoading ? <Loader2 size={16} className="animate-spin" /> : <Chrome size={16} />}
-            Continue with Google
-          </button>
+              <div className="mb-5 flex items-center gap-3">
+                <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+                <span className="text-xs font-medium text-zinc-400">or use email</span>
+                <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+              </div>
+            </>
+          )}
 
-          <div className="mb-5 flex items-center gap-3">
-            <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
-            <span className="text-xs font-medium text-zinc-400">or use email</span>
-            <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
-          </div>
-
-          {tab === "login" ? (
+          {activeTab === "login" ? (
             <form onSubmit={handleLogin} className="space-y-4" noValidate>
               <Field label="Email" error={loginErrors.email}>
                 <input

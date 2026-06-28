@@ -63,7 +63,7 @@ function playNewOrderBeep() {
 }
 
 export default function KitchenPage() {
-  const { user, isAuthenticated, setUser } = useAuthStore();
+  const { user, setUser } = useAuthStore();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [checking, setChecking] = useState(true);
@@ -84,16 +84,12 @@ export default function KitchenPage() {
 
     async function verifyStaff() {
       try {
-        let role = user?.role;
-        if (!isAuthenticated || !user) {
-          const res = await authApi.me();
-          const sessionUser = res.data.data.user;
-          if (cancelled) return;
-          setUser(sessionUser);
-          role = sessionUser.role;
-        }
+        const res = await authApi.me();
+        const sessionUser = res.data.data.user;
+        if (cancelled) return;
+        setUser(sessionUser);
 
-        if (!["KITCHEN", "ADMIN"].includes(role ?? "")) {
+        if (!["KITCHEN", "ADMIN"].includes(sessionUser.role ?? "")) {
           router.replace("/");
           return;
         }
@@ -109,7 +105,7 @@ export default function KitchenPage() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, router, setUser, user]);
+  }, [router, setUser]);
 
   async function updateStatus(orderId: string, status: string) {
     setUpdating(orderId);

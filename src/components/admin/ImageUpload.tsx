@@ -11,7 +11,7 @@ import {
 } from "@/lib/storage";
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 12 * 1024 * 1024;
 
 type ImageUploadProps = {
   currentImageUrl?: string | null;
@@ -44,7 +44,7 @@ export function ImageUpload({
       return "Use a JPG, PNG, or WEBP image.";
     }
     if (file.size > MAX_FILE_SIZE) {
-      return "Image must be 5MB or smaller.";
+      return "Image must be 12MB or smaller.";
     }
     return null;
   }
@@ -169,7 +169,7 @@ export function ImageUpload({
           <p className="mt-3 text-sm font-medium text-zinc-950 dark:text-white">
             Drop image here or browse
           </p>
-          <p className="mt-1 text-xs text-zinc-500">JPG, PNG, or WEBP up to 5MB</p>
+          <p className="mt-1 text-xs text-zinc-500">JPG, PNG, or WEBP up to 12MB</p>
           <button
             type="button"
             onClick={(event) => {

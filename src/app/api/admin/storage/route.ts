@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { withAuth } from "@/lib/middleware";
 import type { AuthenticatedRequest } from "@/lib/middleware";
 
@@ -23,10 +23,42 @@ function getSupabaseAdmin() {
   });
 }
 
+function storageErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return "Image upload failed.";
+}
+
 function parseStoragePath(req: NextRequest, key = "path") {
   const path = req.nextUrl.searchParams.get(key);
   if (!path || !PATH_PATTERN.test(path)) return null;
   return path;
+}
+
+async function ensureBucket(supabase: SupabaseClient) {
+  const { data: bucket, error: getError } = await supabase.storage.getBucket(BUCKET);
+
+  if (!bucket && getError) {
+    const { error: createError } = await supabase.storage.createBucket(BUCKET, {
+      public: true,
+      fileSizeLimit: MAX_UPLOAD_BYTES,
+      allowedMimeTypes: ["image/webp"],
+    });
+
+    if (createError && !createError.message.toLowerCase().includes("already exists")) {
+      throw createError;
+    }
+
+    return;
+  }
+
+  if (bucket && !bucket.public) {
+    const { error } = await supabase.storage.updateBucket(BUCKET, {
+      public: true,
+      fileSizeLimit: MAX_UPLOAD_BYTES,
+      allowedMimeTypes: ["image/webp"],
+    });
+    if (error) throw error;
+  }
 }
 
 export const POST = withAuth(
@@ -49,6 +81,7 @@ export const POST = withAuth(
 
     try {
       const supabase = getSupabaseAdmin();
+      await ensureBucket(supabase);
 
       if (existingPath && existingPath !== path) {
         const { error } = await supabase.storage.from(BUCKET).remove([existingPath]);
@@ -72,7 +105,7 @@ export const POST = withAuth(
     } catch (error) {
       console.error("[Storage Upload]", error);
       return NextResponse.json(
-        { success: false, error: "Image upload failed." },
+        { success: false, error: storageErrorMessage(error) },
         { status: 500 }
       );
     }

@@ -30,6 +30,15 @@ export function createImagePath(folder: ImageFolder) {
   return `${folder}/${Date.now()}-${crypto.randomUUID()}.webp`;
 }
 
+async function refreshAuthSession() {
+  const res = await fetch("/api/auth/refresh", {
+    method: "POST",
+    credentials: "include",
+  });
+
+  return res.ok;
+}
+
 export async function compressImage(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
   const longestSide = Math.max(bitmap.width, bitmap.height);
@@ -89,12 +98,19 @@ export async function uploadImage(
   const params = new URLSearchParams({ path });
   if (existingPath) params.set("existingPath", existingPath);
 
-  const res = await fetch(`/api/admin/storage?${params.toString()}`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "image/webp" },
-    body: blob,
-  });
+  async function sendUpload() {
+    return fetch(`/api/admin/storage?${params.toString()}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "image/webp" },
+      body: blob,
+    });
+  }
+
+  let res = await sendUpload();
+  if (res.status === 401 && (await refreshAuthSession())) {
+    res = await sendUpload();
+  }
 
   const payload = await res.json();
   if (!res.ok || !payload.success) {
@@ -117,33 +133,51 @@ export async function uploadImageWithProgress(
   const params = new URLSearchParams({ path });
   if (existingPath) params.set("existingPath", existingPath);
 
-  return new Promise<string>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `/api/admin/storage?${params.toString()}`);
-    xhr.withCredentials = true;
-    xhr.setRequestHeader("Content-Type", "image/webp");
+  function sendUpload(hasRetried = false): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/api/admin/storage?${params.toString()}`);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader("Content-Type", "image/webp");
 
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) return;
-      onProgress(Math.round((event.loaded / event.total) * 100));
-    };
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable) return;
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      };
 
-    xhr.onload = () => {
-      try {
-        const payload = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300 && payload.success) {
-          onProgress(100);
-          resolve(payload.data.url);
-          return;
+      xhr.onload = () => {
+        try {
+          const payload = JSON.parse(xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300 && payload.success) {
+            onProgress(100);
+            resolve(payload.data.url);
+            return;
+          }
+
+          if (xhr.status === 401 && !hasRetried) {
+            refreshAuthSession()
+              .then((refreshed) => {
+                if (!refreshed) {
+                  reject(new Error(payload.error ?? "Your admin session expired. Sign in again."));
+                  return;
+                }
+
+                sendUpload(true).then(resolve).catch(reject);
+              })
+              .catch(() => reject(new Error("Your admin session expired. Sign in again.")));
+            return;
+          }
+
+          reject(new Error(payload.error ?? "Image upload failed."));
+        } catch {
+          reject(new Error(xhr.responseText || "Image upload failed."));
         }
+      };
 
-        reject(new Error(payload.error ?? "Image upload failed."));
-      } catch {
-        reject(new Error(xhr.responseText || "Image upload failed."));
-      }
-    };
+      xhr.onerror = () => reject(new Error("Image upload failed."));
+      xhr.send(blob);
+    });
+  }
 
-    xhr.onerror = () => reject(new Error("Image upload failed."));
-    xhr.send(blob);
-  });
+  return sendUpload();
 }

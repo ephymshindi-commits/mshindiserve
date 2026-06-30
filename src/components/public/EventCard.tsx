@@ -6,25 +6,29 @@ import { format } from "date-fns";
 import { CalendarDays, CheckCircle2, Loader2, MapPin, Ticket, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { AuthModal } from "@/components/shared/AuthModal";
 import { ticketsApi, paymentsApi } from "@/lib/api";
 import { formatKES } from "@/lib/utils";
 import { eventImage } from "@/lib/visuals";
-import { useAuthStore } from "@/store/authStore";
 import type { Event } from "@/types";
 
 interface EventCardProps {
   event: Event;
 }
 
+type ConfirmedTicket = {
+  id: string;
+  ticketCode: string;
+  paymentStatus: "PENDING" | "COMPLETED" | "FAILED" | "REFUNDED";
+  mpesaRef?: string | null;
+  message?: string;
+};
+
 export function EventCard({ event }: EventCardProps) {
-  const { isAuthenticated } = useAuthStore();
-  const [showAuth, setShowAuth] = useState(false);
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [qty, setQty] = useState(1);
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
-  const [ticketCode, setTicketCode] = useState<string | null>(null);
+  const [confirmedTicket, setConfirmedTicket] = useState<ConfirmedTicket | null>(null);
 
   const eventDate = new Date(event.date);
   const remaining = Math.max(0, event.totalSeats - event.soldSeats);
@@ -41,10 +45,6 @@ export function EventCard({ event }: EventCardProps) {
   }, [maxQty, qty]);
 
   function handleBuyClick() {
-    if (!isAuthenticated) {
-      setShowAuth(true);
-      return;
-    }
     setShowTicketModal(true);
   }
 
@@ -59,11 +59,36 @@ export function EventCard({ event }: EventCardProps) {
     try {
       const ticketRes = await ticketsApi.buy(event.id, qty);
       const ticket = ticketRes.data.data;
+      const nextTicket: ConfirmedTicket = {
+        id: ticket.id,
+        ticketCode: ticket.ticketCode,
+        paymentStatus: ticket.paymentStatus ?? "PENDING",
+        message: "Ticket reserved. Complete payment to confirm attendance.",
+      };
 
-      await paymentsApi.stkPush({ phoneNumber: normalizedPhone, ticketId: ticket.id });
+      setConfirmedTicket(nextTicket);
 
-      setTicketCode(ticket.ticketCode);
-      toast.success("Ticket reserved. Check your phone to complete payment.");
+      try {
+        const paymentRes = await paymentsApi.stkPush({
+          phoneNumber: normalizedPhone,
+          ticketId: ticket.id,
+        });
+        setConfirmedTicket({
+          ...nextTicket,
+          message:
+            paymentRes.data.data?.message ??
+            "Ticket reserved. Check your phone to complete payment.",
+        });
+        toast.success("Ticket reserved. Check your phone to complete payment.");
+      } catch (paymentError: any) {
+        setConfirmedTicket({
+          ...nextTicket,
+          message:
+            paymentError?.response?.data?.error ??
+            "M-Pesa is unavailable. Use simulated payment to finish the demo.",
+        });
+        toast.error("M-Pesa is unavailable. You can simulate payment success.");
+      }
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? "Ticket purchase failed");
     } finally {
@@ -71,9 +96,33 @@ export function EventCard({ event }: EventCardProps) {
     }
   }
 
+  async function simulateTicketPayment() {
+    if (!confirmedTicket) return;
+
+    setLoading(true);
+    try {
+      const res = await paymentsApi.simulate({
+        ticketId: confirmedTicket.id,
+        phoneNumber: phone.replace(/\s/g, "") || undefined,
+      });
+      const payment = res.data.data;
+      setConfirmedTicket({
+        ...confirmedTicket,
+        paymentStatus: payment.paymentStatus,
+        mpesaRef: payment.mpesaRef,
+        message: "Payment completed. Your ticket is confirmed.",
+      });
+      toast.success("Ticket payment completed.");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? "Could not simulate payment");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function closeTicketModal() {
     setShowTicketModal(false);
-    setTicketCode(null);
+    setConfirmedTicket(null);
     setPhone("");
     setQty(1);
   }
@@ -135,15 +184,6 @@ export function EventCard({ event }: EventCardProps) {
         </div>
       </article>
 
-      <AuthModal
-        open={showAuth}
-        onClose={() => setShowAuth(false)}
-        onSuccess={() => {
-          setShowAuth(false);
-          setShowTicketModal(true);
-        }}
-      />
-
       <Dialog.Root open={showTicketModal} onOpenChange={(open) => !open && closeTicketModal()}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
@@ -151,10 +191,12 @@ export function EventCard({ event }: EventCardProps) {
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
                 <Dialog.Title className="text-base font-semibold text-zinc-950 dark:text-white">
-                  {ticketCode ? "Ticket reserved" : event.title}
+                  {confirmedTicket ? "Ticket reserved" : event.title}
                 </Dialog.Title>
                 <Dialog.Description className="mt-1 text-sm text-zinc-500">
-                  {ticketCode
+                  {confirmedTicket?.paymentStatus === "COMPLETED"
+                    ? "Your ticket is confirmed."
+                    : confirmedTicket
                     ? "Complete payment from your phone to confirm attendance."
                     : `${format(eventDate, "EEEE, d MMMM yyyy")} at ${event.venue}`}
                 </Dialog.Description>
@@ -166,7 +208,7 @@ export function EventCard({ event }: EventCardProps) {
               </Dialog.Close>
             </div>
 
-            {ticketCode ? (
+            {confirmedTicket ? (
               <div className="space-y-5 text-center">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
                   <CheckCircle2 size={26} />
@@ -174,9 +216,28 @@ export function EventCard({ event }: EventCardProps) {
                 <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
                   <p className="text-xs text-zinc-500">Ticket code</p>
                   <p className="mt-1 font-mono text-lg font-bold tracking-widest text-amber-700 dark:text-amber-400">
-                    {ticketCode}
+                    {confirmedTicket.ticketCode}
                   </p>
+                  <p className="mt-2 text-xs font-medium text-zinc-500">
+                    Payment: {confirmedTicket.paymentStatus}
+                  </p>
+                  {confirmedTicket.mpesaRef ? (
+                    <p className="mt-1 text-xs text-zinc-500">Ref: {confirmedTicket.mpesaRef}</p>
+                  ) : null}
                 </div>
+                {confirmedTicket.message ? (
+                  <p className="text-sm leading-6 text-zinc-500">{confirmedTicket.message}</p>
+                ) : null}
+                {confirmedTicket.paymentStatus !== "COMPLETED" ? (
+                  <button
+                    onClick={simulateTicketPayment}
+                    disabled={loading}
+                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:opacity-60"
+                  >
+                    {loading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                    {loading ? "Completing" : "Simulate payment success"}
+                  </button>
+                ) : null}
                 <button
                   onClick={closeTicketModal}
                   className="h-11 w-full rounded-lg bg-zinc-950 text-sm font-medium text-white transition hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"

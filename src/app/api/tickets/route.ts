@@ -1,11 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import { prisma } from "@/lib/prisma";
 import { withAuth, logActivity } from "@/lib/middleware";
 import type { AuthenticatedRequest } from "@/lib/middleware";
-import { ticketLimiter } from "@/lib/rate-limit";
+import { clientIp, ticketLimiter } from "@/lib/rate-limit";
+import { getOptionalAuth, getOrCreateGuestUser } from "@/lib/guest-checkout";
 
 export const dynamic = "force-dynamic";
 const MAX_RETRIES = 3;
@@ -104,71 +105,76 @@ async function purchaseWithRetry(eventId: string, quantity: number, userId: stri
   throw new Error("SERVER_BUSY");
 }
 
-export const POST = withAuth(
-  async (req: AuthenticatedRequest) => {
-    const limited = await ticketLimiter?.check(req.user.sub);
-    if (limited) return limited;
+export async function POST(req: NextRequest) {
+  const authUser = await getOptionalAuth(req);
+  const limited = await ticketLimiter?.check(authUser?.sub ?? clientIp(req));
+  if (limited) return limited;
 
-    let body: unknown;
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ success: false, error: "Invalid JSON" }, { status: 400 });
-    }
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ success: false, error: "Invalid JSON" }, { status: 400 });
+  }
 
-    const parsed = buyTicketSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: parsed.error.errors[0].message },
-        { status: 422 }
-      );
-    }
+  const parsed = buyTicketSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0].message },
+      { status: 422 }
+    );
+  }
 
-    const { eventId, quantity } = parsed.data;
+  const guestUser = authUser ? null : await getOrCreateGuestUser();
+  const userId = authUser?.sub ?? guestUser!.id;
+  const { eventId, quantity } = parsed.data;
 
-    try {
-      const ticket = await purchaseWithRetry(eventId, quantity, req.user.sub);
+  try {
+    const ticket = await purchaseWithRetry(eventId, quantity, userId);
 
-      await logActivity({
-        userId: req.user.sub,
-        action: "CREATE_TICKET",
-        resource: "tickets",
-        resourceId: ticket.id,
-        details: { eventId, quantity, ticketCode: ticket.ticketCode },
-        req,
-      });
+    await logActivity({
+      userId,
+      action: "CREATE_TICKET",
+      resource: "tickets",
+      resourceId: ticket.id,
+      details: {
+        eventId,
+        quantity,
+        ticketCode: ticket.ticketCode,
+        checkoutMode: authUser ? "authenticated" : "guest",
+      },
+      req,
+    });
 
-      return NextResponse.json({ success: true, data: ticket }, { status: 201 });
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.message === "EVENT_NOT_FOUND") {
-          return NextResponse.json(
-            { success: false, error: "Event not found or no longer active" },
-            { status: 404 }
-          );
-        }
-        if (error.message === "EVENT_PAST") {
-          return NextResponse.json(
-            { success: false, error: "This event has already taken place" },
-            { status: 409 }
-          );
-        }
-        if (error.message.startsWith("SEATS:")) {
-          const remaining = error.message.replace("SEATS:", "");
-          return NextResponse.json(
-            { success: false, error: `Only ${remaining} tickets remaining` },
-            { status: 409 }
-          );
-        }
-        if (error.message === "SERVER_BUSY") {
-          return NextResponse.json(
-            { success: false, error: "Server busy, please try again" },
-            { status: 503 }
-          );
-        }
+    return NextResponse.json({ success: true, data: ticket }, { status: 201 });
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "EVENT_NOT_FOUND") {
+        return NextResponse.json(
+          { success: false, error: "Event not found or no longer active" },
+          { status: 404 }
+        );
       }
-      throw error;
+      if (error.message === "EVENT_PAST") {
+        return NextResponse.json(
+          { success: false, error: "This event has already taken place" },
+          { status: 409 }
+        );
+      }
+      if (error.message.startsWith("SEATS:")) {
+        const remaining = error.message.replace("SEATS:", "");
+        return NextResponse.json(
+          { success: false, error: `Only ${remaining} tickets remaining` },
+          { status: 409 }
+        );
+      }
+      if (error.message === "SERVER_BUSY") {
+        return NextResponse.json(
+          { success: false, error: "Server busy, please try again" },
+          { status: 503 }
+        );
+      }
     }
-  },
-  ["CUSTOMER", "ADMIN"]
-);
+    throw error;
+  }
+}

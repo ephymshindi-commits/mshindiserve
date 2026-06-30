@@ -153,6 +153,12 @@ export const paymentsApi = {
     bookingId?: string;
     ticketId?: string;
   }) => api.post("/payments/mpesa-stk", data),
+  simulate: (data: {
+    orderId?: string;
+    bookingId?: string;
+    ticketId?: string;
+    phoneNumber?: string;
+  }) => api.post("/payments/simulate", data),
   simulateOrder: (data: { orderId: string; phoneNumber?: string }) =>
     api.post("/payments/simulate", data),
 };

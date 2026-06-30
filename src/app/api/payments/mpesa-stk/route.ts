@@ -85,14 +85,22 @@ export async function POST(req: NextRequest) {
   }
 
   if (bookingId) {
-    if (!authUser) {
-      return NextResponse.json({ success: false, error: "Authentication required" }, { status: 401 });
-    }
-
-    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
-    if (!booking || (booking.userId !== authUser.sub && authUser.role !== "ADMIN")) {
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { user: { select: { email: true } } },
+    });
+    if (!booking) {
       return NextResponse.json({ success: false, error: "Booking not found" }, { status: 404 });
     }
+
+    const canPayBooking =
+      authUser?.role === "ADMIN" ||
+      authUser?.sub === booking.userId ||
+      (!authUser && isGuestCheckoutUser(booking.user));
+    if (!canPayBooking) {
+      return NextResponse.json({ success: false, error: "Booking not found" }, { status: 404 });
+    }
+
     if (booking.paymentStatus === "COMPLETED") {
       return NextResponse.json({ success: false, error: "Booking already paid" }, { status: 400 });
     }
@@ -102,14 +110,22 @@ export async function POST(req: NextRequest) {
   }
 
   if (ticketId) {
-    if (!authUser) {
-      return NextResponse.json({ success: false, error: "Authentication required" }, { status: 401 });
-    }
-
-    const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
-    if (!ticket || (ticket.userId !== authUser.sub && authUser.role !== "ADMIN")) {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      include: { user: { select: { email: true } } },
+    });
+    if (!ticket) {
       return NextResponse.json({ success: false, error: "Ticket not found" }, { status: 404 });
     }
+
+    const canPayTicket =
+      authUser?.role === "ADMIN" ||
+      authUser?.sub === ticket.userId ||
+      (!authUser && isGuestCheckoutUser(ticket.user));
+    if (!canPayTicket) {
+      return NextResponse.json({ success: false, error: "Ticket not found" }, { status: 404 });
+    }
+
     if (ticket.paymentStatus === "COMPLETED") {
       return NextResponse.json({ success: false, error: "Ticket already paid" }, { status: 400 });
     }

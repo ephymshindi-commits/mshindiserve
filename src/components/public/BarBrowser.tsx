@@ -1,6 +1,7 @@
 "use client";
 
-import { Loader2, RefreshCw, Wine } from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { CheckCircle2, Loader2, Minus, Plus, RefreshCw, ShoppingBag, Wine, X } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
@@ -31,6 +32,13 @@ type LiquorItem = {
   currentStock: number;
   lowStockThreshold: number;
   status: "ACTIVE" | "INACTIVE";
+};
+
+type BarOrderResult = {
+  reference: string;
+  paymentStatus: "COMPLETED";
+  tableNumber?: string | null;
+  message?: string;
 };
 
 const categories: Array<"ALL" | LiquorCategory> = [
@@ -201,6 +209,12 @@ export function BarBrowser() {
   const [category, setCategory] = useState<"ALL" | LiquorCategory>("ALL");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [orderingItem, setOrderingItem] = useState<LiquorItem | null>(null);
+  const [quantity, setQuantity] = useState(1);
+  const [tableNumber, setTableNumber] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [orderLoading, setOrderLoading] = useState(false);
+  const [orderResult, setOrderResult] = useState<BarOrderResult | null>(null);
 
   async function loadItems(nextCategory = category, quiet = false) {
     if (quiet) setRefreshing(true);
@@ -231,10 +245,102 @@ export function BarBrowser() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tableFromUrl = params.get("table");
+    const storedTable = window.localStorage.getItem("ms-table-number");
+    const nextTable = tableFromUrl || storedTable || "";
+    if (nextTable) setTableNumber(nextTable);
+  }, []);
+
   const filteredCategories = useMemo(() => {
     const present = new Set(items.map((item) => item.category));
     return categories.filter((item) => item === "ALL" || present.has(item));
   }, [items]);
+
+  const orderTotal = orderingItem ? Number(orderingItem.retailPrice) * quantity : 0;
+  const maxQuantity = Math.max(1, Math.min(20, Math.floor(orderingItem?.currentStock ?? 1)));
+
+  function openOrder(item: LiquorItem) {
+    setOrderingItem(item);
+    setQuantity(1);
+    setOrderResult(null);
+  }
+
+  function closeOrder() {
+    setOrderingItem(null);
+    setQuantity(1);
+    setOrderLoading(false);
+    setOrderResult(null);
+  }
+
+  async function submitBarOrder() {
+    if (!orderingItem) return;
+
+    const normalizedTable = tableNumber.trim();
+    if (!normalizedTable) {
+      toast.error("Enter the table number");
+      return;
+    }
+
+    const normalizedPhone = phoneNumber.replace(/\s/g, "");
+    if (normalizedPhone && !/^(\+254|0)[17]\d{8}$/.test(normalizedPhone)) {
+      toast.error("Enter a valid Safaricom number or leave phone empty");
+      return;
+    }
+
+    setOrderLoading(true);
+    try {
+      window.localStorage.setItem("ms-table-number", normalizedTable);
+
+      const res = await fetch("/api/liquor/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          itemId: orderingItem.id,
+          quantity,
+          tableNumber: normalizedTable,
+          phoneNumber: normalizedPhone || undefined,
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok || !payload.success) {
+        throw new Error(payload.error ?? "Could not place bar order.");
+      }
+
+      const data = payload.data;
+      setOrderResult({
+        reference: data.reference,
+        paymentStatus: "COMPLETED",
+        tableNumber: data.tableNumber,
+        message: data.message ?? "Bar order sent to the team.",
+      });
+
+      if (data.item) {
+        setItems((current) =>
+          current.map((item) => (item.id === data.item.id ? { ...item, ...data.item } : item))
+        );
+      } else if (orderingItem.id.startsWith("fallback-")) {
+        setItems((current) =>
+          current.map((item) =>
+            item.id === orderingItem.id
+              ? { ...item, currentStock: Math.max(0, item.currentStock - quantity) }
+              : item
+          )
+        );
+      }
+
+      if (!orderingItem.id.startsWith("fallback-")) {
+        void loadItems(category, true);
+      }
+
+      toast.success("Bar order completed.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not place bar order.");
+    } finally {
+      setOrderLoading(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -333,9 +439,14 @@ export function BarBrowser() {
                         {money(item.retailPrice)}
                       </p>
                     </div>
-                    <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:bg-zinc-950">
-                      Ask at bar or restaurant
-                    </p>
+                    <button
+                      onClick={() => openOrder(item)}
+                      disabled={item.currentStock <= 0}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-zinc-950 px-4 text-sm font-medium text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-amber-600 dark:hover:bg-amber-500"
+                    >
+                      <ShoppingBag size={15} />
+                      Order
+                    </button>
                   </div>
                 </div>
               </article>
@@ -343,6 +454,133 @@ export function BarBrowser() {
           })}
         </div>
       )}
+
+      <Dialog.Root open={Boolean(orderingItem)} onOpenChange={(open) => !open && closeOrder()}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg bg-white p-5 shadow-2xl dark:bg-zinc-900">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <Dialog.Title className="text-base font-semibold text-zinc-950 dark:text-white">
+                  {orderResult ? "Bar order complete" : orderingItem?.name}
+                </Dialog.Title>
+                <Dialog.Description className="mt-1 text-sm text-zinc-500">
+                  {orderResult
+                    ? "Your drink order has been logged for the team."
+                    : "Choose quantity and table number to complete the order."}
+                </Dialog.Description>
+              </div>
+              <Dialog.Close asChild>
+                <button className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+                  <X size={18} />
+                </button>
+              </Dialog.Close>
+            </div>
+
+            {orderResult ? (
+              <div className="space-y-5 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                  <CheckCircle2 size={26} />
+                </div>
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
+                  <p className="text-xs text-zinc-500">Reference</p>
+                  <p className="mt-1 font-mono text-lg font-bold tracking-widest text-amber-700 dark:text-amber-400">
+                    {orderResult.reference}
+                  </p>
+                  <p className="mt-2 text-xs font-medium text-zinc-500">
+                    Table: {orderResult.tableNumber ?? tableNumber}
+                  </p>
+                </div>
+                {orderResult.message ? (
+                  <p className="text-sm leading-6 text-zinc-500">{orderResult.message}</p>
+                ) : null}
+                <button
+                  onClick={closeOrder}
+                  className="h-11 w-full rounded-lg bg-zinc-950 text-sm font-medium text-white transition hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-zinc-950 dark:text-white">
+                        {orderingItem?.name}
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {orderingItem ? label(orderingItem.category) : "Bar item"}
+                      </p>
+                    </div>
+                    <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+                      {orderingItem ? money(orderingItem.retailPrice) : money(0)}
+                    </p>
+                  </div>
+                </div>
+
+                <label className="block">
+                  <span className="text-xs font-medium text-zinc-500">Quantity</span>
+                  <div className="mt-1.5 flex h-11 items-center justify-between rounded-lg border border-zinc-200 bg-white px-2 dark:border-zinc-700 dark:bg-zinc-800">
+                    <button
+                      onClick={() => setQuantity((current) => Math.max(1, current - 1))}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                      type="button"
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <span className="text-sm font-semibold text-zinc-950 dark:text-white">{quantity}</span>
+                    <button
+                      onClick={() => setQuantity((current) => Math.min(maxQuantity, current + 1))}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                      type="button"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-medium text-zinc-500">Table number</span>
+                  <input
+                    value={tableNumber}
+                    onChange={(event) => setTableNumber(event.target.value)}
+                    placeholder="e.g. 7"
+                    className="mt-1.5 h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:ring-2 focus:ring-amber-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-medium text-zinc-500">Phone number (optional)</span>
+                  <input
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(event) => setPhoneNumber(event.target.value)}
+                    placeholder="+254 712 345 678"
+                    className="mt-1.5 h-11 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:ring-2 focus:ring-amber-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                  />
+                </label>
+
+                <div className="flex items-center justify-between border-t border-zinc-200 pt-4 text-sm dark:border-zinc-800">
+                  <span className="text-zinc-500">Total</span>
+                  <span className="font-semibold text-amber-700 dark:text-amber-400">
+                    {money(orderTotal)}
+                  </span>
+                </div>
+
+                <button
+                  onClick={submitBarOrder}
+                  disabled={orderLoading}
+                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:opacity-60"
+                >
+                  {orderLoading ? <Loader2 size={16} className="animate-spin" /> : <ShoppingBag size={16} />}
+                  {orderLoading ? "Completing" : "Simulate bar order"}
+                </button>
+              </div>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

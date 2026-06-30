@@ -69,17 +69,13 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
     });
   }
 
-  if (!authUser) {
-    return NextResponse.json(
-      { success: false, error: "Authentication required" },
-      { status: 401, headers: { "Cache-Control": "no-store" } }
-    );
-  }
-
   if (parsedType.data === "booking") {
     const booking = await prisma.booking.findUnique({
       where: { id: params.id },
-      include: { payment: true },
+      include: {
+        payment: true,
+        user: { select: { email: true } },
+      },
     });
 
     if (!booking) {
@@ -89,7 +85,11 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
       );
     }
 
-    if (booking.userId !== authUser.sub && authUser.role !== "ADMIN") {
+    const canViewBooking =
+      authUser?.role === "ADMIN" ||
+      authUser?.sub === booking.userId ||
+      (!authUser && isGuestCheckoutUser(booking.user));
+    if (!canViewBooking) {
       return NextResponse.json(
         { success: false, error: "You cannot view this payment" },
         { status: 403, headers: { "Cache-Control": "no-store" } }
@@ -106,7 +106,10 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
 
   const ticket = await prisma.ticket.findUnique({
     where: { id: params.id },
-    include: { payment: true },
+    include: {
+      payment: true,
+      user: { select: { email: true } },
+    },
   });
 
   if (!ticket) {
@@ -116,7 +119,11 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
     );
   }
 
-  if (ticket.userId !== authUser.sub && authUser.role !== "ADMIN") {
+  const canViewTicket =
+    authUser?.role === "ADMIN" ||
+    authUser?.sub === ticket.userId ||
+    (!authUser && isGuestCheckoutUser(ticket.user));
+  if (!canViewTicket) {
     return NextResponse.json(
       { success: false, error: "You cannot view this payment" },
       { status: 403, headers: { "Cache-Control": "no-store" } }

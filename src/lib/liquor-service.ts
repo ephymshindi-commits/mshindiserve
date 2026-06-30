@@ -23,7 +23,8 @@ export async function processLiquorSale(
   itemId: string,
   quantity: number,
   outlet: string,
-  userId?: string
+  userId?: string,
+  description?: string
 ) {
   assertPositiveQuantity(quantity);
   const normalizedOutlet = parseOutlet(outlet);
@@ -92,7 +93,7 @@ export async function processLiquorSale(
           userId,
           unitRetailPrice: item.retailPrice,
           totalAmount: item.retailPrice.mul(quantity),
-          description: `Sale from ${normalizedOutlet.toLowerCase()}`,
+          description: description ?? `Sale from ${normalizedOutlet.toLowerCase()}`,
         },
       });
 
